@@ -59,7 +59,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: 5
                     Image {
-                        source: "../assets/rclone_logo.png"
+                        source: "../assets/rclone_isologo.png"
                         sourceSize.width: 64
                         sourceSize.height: 64
                         fillMode: Image.PreserveAspectFit

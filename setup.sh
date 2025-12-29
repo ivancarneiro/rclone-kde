@@ -36,7 +36,7 @@ mkdir -p ~/.local/share/applications
 
 # Get absolute path to this dir
 BASE_DIR=$(pwd)
-ICON_PATH="$BASE_DIR/src/ui/assets/rclone_logo.png"
+ICON_PATH="$BASE_DIR/src/ui/assets/rclone_isologo.png"
 EXEC_PATH="$BASE_DIR/.venv/bin/python3 $BASE_DIR/src/main.py"
 
 cat > ~/.local/share/applications/rclone-manager.desktop <<EOF
