@@ -125,6 +125,16 @@ Esto:
 2.  Instalará todas las dependencias (incluyendo `keyring` para máxima seguridad).
 3.  Creará un acceso directo en tu menú de aplicaciones ("Rclone Manager").
 
-## 🔐 Seguridad
-Las contraseñas del control remoto de Rclone (`rc_pass`) se almacenan de forma segura utilizando el **Keyring del sistema** (GNOME Keyring / KWallet), no en texto plano.
+## 🔐 Seguridad y Arquitectura de Credenciales
+
+Esta aplicación utiliza un **modelo de seguridad híbrido** para garantizar tanto la protección del sistema como la compatibilidad con el ecosistema Rclone:
+
+1.  **Protección de la App (Keyring)**:
+    *   La comunicación interna entre la interfaz gráfica (GUI) y el motor Rclone (RC API) está blindada.
+    *   Utilizamos el **Keyring del Sistema** (GNOME Keyring / KWallet) para generar y almacenar una contraseña aleatoria única para esta sesión de control. Esto impide que otro software en tu PC pueda "secuestrar" el control de Rclone.
+
+2.  **Credenciales de Nube (Standard)**:
+    *   Tus tokens de acceso (Google Drive, Client ID, Secret) se almacenan en el archivo de configuración estándar de Rclone (`~/.config/rclone/rclone.conf`).
+    *   **¿Por qué?**: Esto asegura que puedas seguir utilizando `rclone` desde la terminal sin perder acceso a tus cuentas.
+    *   La seguridad de estos tokens depende de los permisos del archivo (que Rclone restringe a solo tu usuario) o del cifrado nativo de Rclone si decides activarlo.
 
