@@ -56,9 +56,9 @@ class Config:
 
     # Rutas
     HOME_DIR = os.path.expanduser("~")
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
-    RCLONE_CONF = os.path.join(base_dir, "rclone-dev.conf")
+    # Production: Use system standard configuration
+    # This allows the app to see existing user remotes.
+    RCLONE_CONF = os.path.join(HOME_DIR, ".config", "rclone", "rclone.conf")
     mount_dir = os.path.join(HOME_DIR, "RcloneMounts")
 
     @staticmethod

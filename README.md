@@ -88,8 +88,20 @@ Ideal para mantener una carpeta local idéntica a una en la nube.
 2.  Clic en **"New Task"**.
 3.  Selecciona tu carpeta Local y la ruta Remota.
 4.  Clic en **"Sync Now"** para iniciar.
-    *   **Logs en Tiempo Real**: Pulsa el botón **"Logs"** en la tarea para ver el progreso detallado en vivo (estilo terminal).
+    *   **Logs en Tiempo Real**: Pulsa el botón **"Logs"** en la tarea### Estructura de Archivos recomendada:
+```
+Rclone-GUI/
+├── rclone-kde/
+│   ├── settings.json         # Preferencias de la app
+│   ├── sync_tasks.json       # Base de datos de tareas sync
+│   ├── src/
+│   │   ├── main.py           # Punto de entrada
+│   │   ├── core/             # Backend
+│   │   ├── ui/               # Frontend (QML + ViewModels)
+│   │   └── assets/           # Imágenes e iconos
+```
 
+**Nota Importante**: La aplicación utiliza ahora la configuración estándar de Rclone (`~/.config/rclone/rclone.conf`). Esto significa que **detectará automáticamente** cualquier control remoto que ya tengas configurado en tu sistema.
 ### 5. Configuración y System Tray
 *   **Minimizar**: Al cerrar la ventana, la app se minimiza al área de notificaciones (reloj).
 *   **Configuración**: Ve a **(☰) -> Settings**.
