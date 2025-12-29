@@ -61,13 +61,6 @@ class SyncViewModel(QObject):
         self._manager.update_task(task_id, name, local_path, remote_path, remote_name)
         self.tasksChanged.emit()
 
-from core.notifications import NotificationManager
-
-class SyncViewModel(QObject):
-    # ... (Keep signals and Init)
-    
-    # ... (Keep properties/slots until run_sync)
-
     @pyqtSlot(int)
     def run_sync(self, task_id):
         if task_id in self._active_workers:
@@ -120,7 +113,11 @@ class SyncViewModel(QObject):
         for task in self._manager.get_tasks():
             self.run_sync(task["id"])
 
-    # ... (Keep select_local_folder)
+    @pyqtSlot(result=str)
+    def select_local_folder(self):
+        """Abre un diálogo nativo Qt para seleccionar carpeta."""
+        folder = QFileDialog.getExistingDirectory(None, "Select Local Folder")
+        return folder if folder else ""
 
     def _on_sync_success(self, task_id):
         self.logger.info(f"Sync success for task {task_id}")
@@ -146,4 +143,9 @@ class SyncViewModel(QObject):
         
         self._cleanup_worker(task_id)
     
-    # ... (cleanup_worker)
+    def _cleanup_worker(self, task_id):
+        if task_id in self._active_workers:
+            w = self._active_workers.pop(task_id)
+            w.quit()
+            w.wait()
+            w.deleteLater()
