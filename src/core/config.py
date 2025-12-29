@@ -1,6 +1,7 @@
 import keyring
 import secrets
 import logging
+import os
 
 class Config:
     APP_NAME = "RcloneKDE"
