@@ -37,11 +37,11 @@ mkdir -p ~/.local/share/applications
 # Get absolute path to this dir
 BASE_DIR=$(pwd)
 ICON_PATH="$BASE_DIR/src/ui/assets/rclone_isologo.png"
-EXEC_PATH="$BASE_DIR/.venv/bin/python3 $BASE_DIR/src/main.py"
+EXEC_PATH="$BASE_DIR/start.sh"
 
-cat > ~/.local/share/applications/rclone-manager.desktop <<EOF
+cat > ~/.local/share/applications/rclone-gui-final.desktop <<EOF
 [Desktop Entry]
-Name=Rclone Manager
+Name=Rclone Manager (Final)
 Comment=Manage your Cloud Drive mounts with ease
 Exec=$EXEC_PATH
 Icon=$ICON_PATH
