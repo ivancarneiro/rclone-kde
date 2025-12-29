@@ -32,8 +32,7 @@ class RcloneProcessManager:
             f"--rc-addr={self.rc_addr}",
             f"--rc-user={self.rc_user}",
             f"--rc-pass={self.rc_pass}",
-            f"--config={self.rc_conf}", # Usar config aislado
-            "--rc-no-auth" 
+            f"--config={self.rc_conf}" # Usar config aislado
         ]
 
         try:
