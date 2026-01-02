@@ -1,5 +1,7 @@
 # Rclone Manager (KDE/Qt Version)
 
+[![Recorrido Completo (Walkthrough)](https://img.shields.io/badge/📖-Ver_Recorrido/Manual_de_Uso-blue)](WALKTHROUGH.md)
+
 ## 📋 Resumen y Propósito
 **Rclone Manager** es una interfaz gráfica moderna (GUI) desarrollada para Linux (específicamente entornos KDE Plasma, aunque compatible con otros) que facilita la gestión de **Rclone**, la potente herramienta de línea de comandos para gestionar almacenamiento en la nube.
 
