@@ -14,6 +14,24 @@ Esta aplicación permite a los usuarios:
 
 ---
 
+## 🧠 Conceptos Clave: ¿Mount o Sync?
+
+La aplicación ofrece dos modos de uso. Elige el que mejor se adapte a tu necesidad:
+
+### 🪟 Mount (Montaje)
+*   **¿Qué es?** Crea una carpeta virtual en tu PC que "mira" a la nube.
+*   **Comportamiento:** Los archivos **no ocupan espacio** en tu disco. Solo se descargan parcialmente cuando los abres.
+*   **Ideal para:** Trabajar con muchos archivos sin llenar tu disco duro.
+*   **👉 Cómo usarlo:** En el **Dashboard** principal, haz clic en el botón **"Mount"** de tu tarjeta de conexión.
+
+### 🪞 Sync (Bisync/Espejo)
+*   **¿Qué es?** Crea una **copia física idéntica** en tu disco duro.
+*   **Comportamiento:** Descarga **todo** el contenido. Mantiene ambos lados sincronizados bidireccionalmente.
+*   **Ideal para:** Copias de seguridad (Backup) y trabajo Offline.
+*   **👉 Cómo usarlo:** Abre el menú lateral **(☰)**, ve a **"Sync Tasks"** y crea una nueva tarea seleccionando tu carpeta local y la remota.
+
+---
+
 ## 💻 Requisitos del Sistema
 *   **Sistema Operativo**: Linux (Probado en KDE Neon / Ubuntu / Fedora).
 *   **Dependencia Externa**: `rclone` debe estar instalado en el sistema (`sudo apt install rclone` o via script oficial).

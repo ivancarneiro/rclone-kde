@@ -19,11 +19,29 @@ class RcloneProcessManager:
     def is_installed(self):
         return shutil.which("rclone") is not None
 
+    def _cleanup_port_hogs(self):
+        """Mata procesos rclone antiguos que ocupen el puerto configurado."""
+        try:
+            # Extraer puerto (asumiendo localhost:PORT)
+            port = self.rc_addr.split(":")[-1] 
+            # pkill -f "rc-addr=.*:PORT" es arriesgado si no es exacto
+            # Mejor usar fuser o lsof si existen, o pkill con patrón preciso.
+            # Usaremos pkill con el patrón completo de addr para ser precisos.
+            pattern = f"rc-addr={self.rc_addr}"
+            self.logger.info(f"Cleaning up old processes on {self.rc_addr}...")
+            subprocess.run(["pkill", "-f", pattern], check=False)
+            time.sleep(0.5)
+        except Exception as e:
+            self.logger.warning(f"Cleanup failed: {e}")
+
     def start_daemon(self):
         """Inicia el proceso rclone rcd en segundo plano."""
         if not self.is_installed():
             self.logger.error("Rclone binary not found in PATH")
             return False
+
+        # Kill existing instances on this port
+        self._cleanup_port_hogs()
 
         # TODO: Verificar si el puerto ya está en uso
         
@@ -42,7 +60,7 @@ class RcloneProcessManager:
                 stderr=subprocess.DEVNULL
             )
             self.logger.info(f"Rclone daemon started (PID: {self.process.pid})")
-            time.sleep(1) # Dar tiempo para arrancar
+            time.sleep(3) # Dar tiempo extra para inicializar API y Config
             return True
         except Exception as e:
             self.logger.exception("Failed to start rclone daemon")

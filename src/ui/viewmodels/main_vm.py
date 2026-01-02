@@ -317,7 +317,7 @@ class MainViewModel(QObject):
         self.logger.info(f"Mounting {remote_name}...")
         
         # 1. Definir punto de montaje
-        mount_point = os.path.join(Config.MOUNT_BASE_DIR, remote_name)
+        mount_point = os.path.join(Config.mount_dir, remote_name)
         
         try:
             # Crear directorio si no existe
