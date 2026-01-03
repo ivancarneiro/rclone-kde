@@ -91,7 +91,8 @@ class SyncViewModel(QObject):
             "rclone", "bisync", 
             local, remote, 
             "--verbose",
-            "--config", Config.RCLONE_CONF
+            "--config", Config.RCLONE_CONF,
+            "--max-delete", "5" # SAFETY BELT: Prevent massive deletions
         ]
         
         # Si nunca se ha sincronizado O es forzado, añadir --resync
