@@ -126,9 +126,10 @@ def main():
                 for item in os.listdir(mount_dir):
                     path = os.path.join(mount_dir, item)
                     if os.path.ismount(path):
-                        logging.info(f"Unmounting {path}...")
+                        logging.info(f"Unmounting {path} (lazy)...")
                         import subprocess
-                        subprocess.run(["fusermount", "-u", path], check=False)
+                        # -z (lazy): Detach immediately, cleanup when free. Solve "Target is busy".
+                        subprocess.run(["fusermount", "-uz", path], check=False)
         except Exception as e:
             logging.error(f"Error cleaning up mounts: {e}")
 
