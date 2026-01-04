@@ -336,7 +336,14 @@ class MainViewModel(QObject):
             return
 
         try:
-            # Crear directorio si no existe
+            # 0. CLEANUP STALE MOUNTS (CRITICAL FIX)
+            # Si el directorio existe, intentamos desmontarlo perezosamente (-uz) 
+            # por si quedó "zombie" o con errores de permisos desde la sesión anterior.
+            if os.path.exists(mount_point):
+                 self.logger.info(f"Pre-mount cleanup: ensuring {mount_point} is clear...")
+                 subprocess.run(["fusermount", "-uz", mount_point], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Crear directorio si no existe (ahora que limpiamos)
             os.makedirs(mount_point, exist_ok=True)
             
             # 2. Llamar a Rclone Mount (Async via loop helper)
