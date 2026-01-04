@@ -118,6 +118,21 @@ def main():
 
     # Cleanup on exit
     def cleanup(*args):
+        # 1. Unmount all active mounts to prevent "File exists" errors on next run
+        try:
+            logging.info("Cleaning up mounts...")
+            mount_dir = Config.mount_dir
+            if os.path.exists(mount_dir):
+                for item in os.listdir(mount_dir):
+                    path = os.path.join(mount_dir, item)
+                    if os.path.ismount(path):
+                        logging.info(f"Unmounting {path}...")
+                        import subprocess
+                        subprocess.run(["fusermount", "-u", path], check=False)
+        except Exception as e:
+            logging.error(f"Error cleaning up mounts: {e}")
+
+        # 2. Stop Daemon
         pm.stop_daemon()
         app.quit()
         

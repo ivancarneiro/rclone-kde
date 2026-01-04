@@ -227,7 +227,13 @@ class MainViewModel(QObject):
                 fs_string = f"{name}:"
                 
                 # Check Mount Status
-                is_mounted = any(fs_string in m for m in active_mounts) or any(name in m for m in active_mounts)
+                # 1. Check API (active_mounts)
+                mount_point = os.path.join(Config.mount_dir, name)
+                is_mounted_api = any(fs_string in m for m in active_mounts) or any(name in m for m in active_mounts)
+                # 2. Check System (OS) - Detects "Zombie" mounts from previous sessions
+                is_mounted_sys = os.path.exists(mount_point) and os.path.ismount(mount_point)
+                
+                is_mounted = is_mounted_api or is_mounted_sys
                 
                 # Fallback Email/Detail
                 detail_text = "Google Drive"
@@ -319,6 +325,16 @@ class MainViewModel(QObject):
         # 1. Definir punto de montaje
         mount_point = os.path.join(Config.mount_dir, remote_name)
         
+        # SAFETY CHECK: Si ya está montado (por el sistema), no intentar montar de nuevo
+        if os.path.exists(mount_point) and os.path.ismount(mount_point):
+            self.logger.info(f"Skipping mount for {remote_name}: Already mounted at {mount_point}")
+            # Abrir directamente
+            subprocess.Popen(["xdg-open", mount_point])
+            NotificationManager.send("Drive Ready", f"{remote_name} is already available.")
+            # Refrescar UI para asegurar estado
+            self.refresh_remotes()
+            return
+
         try:
             # Crear directorio si no existe
             os.makedirs(mount_point, exist_ok=True)
