@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal
 from PyQt6.QtWidgets import QFileDialog
 import logging
 import datetime
+import os
 from core.sync_manager import SyncManager
 from core.rclone_client import RcloneClient
 from core.sync_worker import SyncWorker
@@ -87,6 +88,14 @@ class SyncViewModel(QObject):
         remote = f"{task['remote_name']}:{task['remote_path']}"
         
         # Determinar si necesitamos resync (Primera vez o Forzado)
+        if not os.path.exists(local):
+            self._on_sync_error(task_id, f"SAFETY: Local path '{local}' is missing. Aborting.")
+            return
+            
+        if not os.listdir(local):
+            self._on_sync_error(task_id, f"SAFETY: Local path '{local}' is empty. Aborting to prevent mass deletion.")
+            return
+
         cmd = [
             "rclone", "bisync", 
             local, remote, 
