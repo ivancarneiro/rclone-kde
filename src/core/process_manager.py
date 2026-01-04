@@ -2,6 +2,7 @@ import subprocess
 import time
 import logging
 import shutil
+import os
 
 class RcloneProcessManager:
     """
