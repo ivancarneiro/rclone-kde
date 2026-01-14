@@ -5,7 +5,7 @@ import os
 
 class Config:
     APP_NAME = "RcloneKDE"
-    VERSION = "1.2.0"
+    VERSION = "1.2.1"
     
     # Rclone RC Defaults
     RC_ADDR = "localhost:5572"
