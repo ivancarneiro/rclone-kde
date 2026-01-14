@@ -43,14 +43,38 @@ class ActivityViewModel(QObject):
         if not stats: 
             return
             
+        # Track names seen in this poll to detect stalled items
+        seen_active_names = set()
+            
         # 1. Active Transfers
         current_transfers = stats.get("transferring", [])
+        if current_transfers:
+            for t in current_transfers:
+                seen_active_names.add(t.get("name"))
+        
         self._process_stats_list(current_transfers, is_active=True)
         
         # 2. Completed Transfers (Rich metadata for history)
-        # Rclone keeps a buffer of recent transfers. This is better than logs for size/speed.
         completed_transfers = stats.get("transferred", [])
         self._process_stats_list(completed_transfers, is_active=False)
+        
+        # 3. Cleanup Ghosts (Stale "syncing" items)
+        # If an item is "syncing" locally but NOT in "transferring" anymore,
+        # it means it finished (or errored) between polls and we missed the event in "transferred" buffer.
+        # We assume success to clear the UI.
+        transferring_count = 0
+        for item in self._activity:
+            if item["status"] == "syncing":
+                if item["name"] not in seen_active_names:
+                    # It disappeared from active list -> Mark as success
+                    item["status"] = "success"
+                    item["progress"] = 100
+                    # self.logger.debug(f"Marking ghost item as success: {item['name']}")
+                else:
+                    transferring_count += 1
+                    
+        # Debug summary
+        # self.logger.debug(f"Active: {len(seen_active_names)}, Syncing in UI: {transferring_count}")
 
     def _process_stats_list(self, items_list, is_active):
         if not items_list: return

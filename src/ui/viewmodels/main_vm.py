@@ -366,6 +366,9 @@ class MainViewModel(QObject):
                 remote['quota'] = quota_text
                 remote['sync_strategy'] = strategy # bisync, sync, copy or None
                 
+                # Update Loading State (Preserve active mounts)
+                remote['is_loading'] = name in self._mounting_remotes
+
                 updated_remotes.append(remote)
             
             self._remotes = updated_remotes
@@ -374,9 +377,7 @@ class MainViewModel(QObject):
         except Exception as e:
             self.logger.exception(f"Failed to enrich remote data")
 
-    @pyqtSlot(str, bool, bool)
-    def mount_remote(self, remote_name, read_only=False, network_mode=False):
-        import os
+
     @pyqtSlot(str, bool, bool)
     def mount_remote(self, remote_name, read_only=False, network_mode=False):
         import asyncio
@@ -422,13 +423,7 @@ class MainViewModel(QObject):
             self.logger.exception(f"Error mounting {remote_name}")
             NotificationManager.send("Mount Error", str(e), urgency="critical")
         
-        finally:
-            # Clear loading state
-            if remote_name in self._mounting_remotes:
-                self._mounting_remotes.remove(remote_name)
-            self.check_mount_status()
-            self.logger.exception(f"Error mounting {remote_name}")
-            NotificationManager.send("Mount Error", str(e), urgency="critical")
+
         
         finally:
             # Clear loading state
