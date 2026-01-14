@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal
 import subprocess
 import json
 import logging
+from core.config import Config
 
 class WizardViewModel(QObject):
     """
@@ -145,7 +146,7 @@ class WizardViewModel(QObject):
                 f"parameters={parameters_json}",
                 "--rc-addr=localhost:5572",
                 "--rc-user=rclone",
-                "--rc-pass=password"
+                f"--rc-pass={Config.get_rc_pass()}"
             ]
             # client_id y secret ya van en parameters_json, no los añadimos al array cmd
             

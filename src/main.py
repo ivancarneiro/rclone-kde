@@ -17,6 +17,7 @@ from ui.viewmodels.main_vm import MainViewModel
 from ui.viewmodels.wizard_vm import WizardViewModel
 from ui.viewmodels.sync_vm import SyncViewModel
 from ui.viewmodels.settings_vm import SettingsViewModel
+from ui.viewmodels.activity_vm import ActivityViewModel
 
 def setup_tray(app, icon_path, main_vm):
     tray_icon = QSystemTrayIcon(QIcon(icon_path), app)
@@ -80,16 +81,22 @@ def main():
 
     engine = QQmlApplicationEngine() 
     
+    start_minimized_arg = "--minimized" in sys.argv
+    if start_minimized_arg:
+         logging.info("Startup flag --minimized detected.")
+
     # ViewModels
-    main_vm = MainViewModel(client, settings_manager)
+    main_vm = MainViewModel(client, settings_manager, sync_manager)
     wizard_vm = WizardViewModel(client, settings_manager, autostart_manager)
     sync_vm = SyncViewModel(sync_manager, client)
     settings_vm = SettingsViewModel(settings_manager, client, autostart_manager)
+    activity_vm = ActivityViewModel(client, sync_vm)
     
     engine.rootContext().setContextProperty("mainViewModel", main_vm)
     engine.rootContext().setContextProperty("wizardViewModel", wizard_vm)
     engine.rootContext().setContextProperty("syncViewModel", sync_vm)
     engine.rootContext().setContextProperty("settingsViewModel", settings_vm)
+    engine.rootContext().setContextProperty("activityViewModel", activity_vm)
 
     # Load QML
     qml_file = QUrl.fromLocalFile("src/ui/qml/Main.qml")
@@ -118,6 +125,22 @@ def main():
 
     # Cleanup on exit
     def cleanup(*args):
+        # 1. Unmount all active mounts to prevent "File exists" errors on next run
+        try:
+            logging.info("Cleaning up mounts...")
+            mount_dir = Config.mount_dir
+            if os.path.exists(mount_dir):
+                for item in os.listdir(mount_dir):
+                    path = os.path.join(mount_dir, item)
+                    if os.path.ismount(path):
+                        logging.info(f"Unmounting {path} (lazy)...")
+                        import subprocess
+                        # -z (lazy): Detach immediately, cleanup when free. Solve "Target is busy".
+                        subprocess.run(["fusermount", "-uz", path], check=False)
+        except Exception as e:
+            logging.error(f"Error cleaning up mounts: {e}")
+
+        # 2. Stop Daemon
         pm.stop_daemon()
         app.quit()
         

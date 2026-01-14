@@ -1,10 +1,12 @@
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
 from PyQt6.QtQml import QQmlApplicationEngine
 from PyQt6.QtWidgets import QApplication
 import logging
 import aiohttp
 import asyncio
 import json
+import os
+from core.config import Config
 
 class MainViewModel(QObject):
     """
@@ -13,12 +15,25 @@ class MainViewModel(QObject):
     """
     remotesChanged = pyqtSignal()
 
-    def __init__(self, client, settings_manager):
+    def __init__(self, client, settings_manager, sync_manager):
         super().__init__()
         self._client = client
         self._settings_manager = settings_manager
+        self._sync_manager = sync_manager
+        self._sync_manager = sync_manager
+        
+        # Mount Manager (Refactor v1.3)
+        from core.mount_manager import MountManager
+        self._mount_manager = MountManager(client)
+        
         self._remotes = []
+        self._mounting_remotes = set() # Set of remote names currently mounting
         self.logger = logging.getLogger(__name__)
+        
+        # Monitor Timer (Auto-detect external unmounts)
+        self._monitor_timer = QTimer(self)
+        self._monitor_timer.timeout.connect(self.check_mount_status)
+        self._monitor_timer.start(5000) # Check every 5 seconds
 
         # Inicializar vacío al principio
         self._remotes = []
@@ -63,6 +78,52 @@ class MainViewModel(QObject):
         self.logger.info("Solicitud de añadir nuevo drive")
         # El cambio a QStackView maneja la UI, aquí solo lógica si fuera necesaria
         pass
+
+    @pyqtSlot()
+    def check_mount_status(self):
+        """Lighter refresh that only checks mount status (Smart Polling)"""
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Fetch ONLY active mounts (lightweight)
+            active_mounts = loop.run_until_complete(self._mount_manager.get_active_mounts())
+            
+            # Update local state without full re-fetch
+            changed = False
+            for remote in self._remotes:
+                name = remote['name']
+                fs_string = f"{name}:"
+                
+                # Check Mount Status
+                is_mounted_api = any(fs_string in m for m in active_mounts) or any(name in m for m in active_mounts)
+                mount_point = self._mount_manager.get_mount_point(name)
+                is_mounted_sys = self._mount_manager.is_mounted_system(mount_point)
+                
+                new_is_mounted = is_mounted_api or is_mounted_sys
+                
+                if remote.get('is_mounted') != new_is_mounted:
+                    remote['is_mounted'] = new_is_mounted
+                    remote['status_color'] = "#4CAF50" if new_is_mounted else "#9E9E9E"
+                    remote['detail'] = "Mounted" if new_is_mounted else remote.get('email', 'Ready')
+                    if not new_is_mounted and 'email' in remote:
+                        remote['detail'] = remote['email']
+                    changed = True
+                
+                # Update Loading State
+                is_loading = name in self._mounting_remotes
+                if remote.get('is_loading') != is_loading:
+                    remote['is_loading'] = is_loading
+                    changed = True
+
+            loop.close()
+            
+            if changed:
+                self.remotesChanged.emit()
+
+        except Exception as e:
+            self.logger.debug(f"Mount check failed: {e}")
 
     @pyqtSlot()
     def refresh_remotes(self):
@@ -137,24 +198,20 @@ class MainViewModel(QObject):
     
     async def _mount_remote_async(self, remote_name):
         try:
-            from core.config import Config
-            mount_point = f"{Config.mount_dir}/{remote_name}"
-            import os
-            if not os.path.exists(mount_point):
-                os.makedirs(mount_point)
+            # Delegate to Mount Manager
+            result = await self._mount_manager.mount_remote(remote_name)
             
-            fs_string = f"{remote_name}:"
-            # Using _client directly (which is async)
-            await self._client.mount(fs_string, mount_point)
-            
-            # Update local state manually to reflect success without full refresh loop
-            for r in self._remotes:
-                if r['name'] == remote_name:
-                    r['is_mounted'] = True
-                    r['status_color'] = "#4CAF50"
-                    r['detail'] = "Mounted"
-            self.remotesChanged.emit()
-            
+            if result.get("success"):
+                # Update local state manually to reflect success without full refresh loop
+                for r in self._remotes:
+                    if r['name'] == remote_name:
+                        r['is_mounted'] = True
+                        r['status_color'] = "#4CAF50"
+                        r['detail'] = "Mounted"
+                self.remotesChanged.emit()
+            else:
+                 self.logger.error(f"Auto-mount failed for {remote_name}: {result.get('error')}")
+
         except Exception as e:
             self.logger.error(f"Auto-mount failed for {remote_name}: {e}")
 
@@ -227,7 +284,13 @@ class MainViewModel(QObject):
                 fs_string = f"{name}:"
                 
                 # Check Mount Status
-                is_mounted = any(fs_string in m for m in active_mounts) or any(name in m for m in active_mounts)
+                # 1. Check API (active_mounts)
+                mount_point = os.path.join(Config.mount_dir, name)
+                is_mounted_api = any(fs_string in m for m in active_mounts) or any(name in m for m in active_mounts)
+                # 2. Check System (OS) - Detects "Zombie" mounts from previous sessions
+                is_mounted_sys = os.path.exists(mount_point) and os.path.ismount(mount_point)
+                
+                is_mounted = is_mounted_api or is_mounted_sys
                 
                 # Fallback Email/Detail
                 detail_text = "Google Drive"
@@ -293,11 +356,15 @@ class MainViewModel(QObject):
                 except:
                     pass # Algunos remotos no soportan about o fallan si no están configurados
 
+                # Obtener Sync Strategy
+                strategy = self._sync_manager.get_strategy_for_remote(name)
+                
                 # Update dictionary
                 remote['is_mounted'] = is_mounted
                 remote['status_color'] = status_color
                 remote['detail'] = detail_text
                 remote['quota'] = quota_text
+                remote['sync_strategy'] = strategy # bisync, sync, copy or None
                 
                 updated_remotes.append(remote)
             
@@ -307,49 +374,79 @@ class MainViewModel(QObject):
         except Exception as e:
             self.logger.exception(f"Failed to enrich remote data")
 
-    @pyqtSlot(str)
-    def mount_remote(self, remote_name):
+    @pyqtSlot(str, bool, bool)
+    def mount_remote(self, remote_name, read_only=False, network_mode=False):
         import os
-        import subprocess
-        from core.config import Config
+    @pyqtSlot(str, bool, bool)
+    def mount_remote(self, remote_name, read_only=False, network_mode=False):
+        import asyncio
         from core.notifications import NotificationManager
-
-        self.logger.info(f"Mounting {remote_name}...")
         
-        # 1. Definir punto de montaje
-        mount_point = os.path.join(Config.MOUNT_BASE_DIR, remote_name)
+        self.logger.info(f"Mounting {remote_name} (RO: {read_only}, Network: {network_mode})...")
+        
+        # 1. Update Loading State
+        self._mounting_remotes.add(remote_name)
+        self.check_mount_status() # Force UI update to show spinner
         
         try:
-            # Crear directorio si no existe
-            os.makedirs(mount_point, exist_ok=True)
-            
-            # 2. Llamar a Rclone Mount (Async via loop helper)
-            import asyncio
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            fs_string = f"{remote_name}:"
-            # Verificar si ya está montado antes de intentar
-            # (Opcional, pero rclone fallará si ya está montado)
+            # 2. Delegate to Mount Manager
+            result = loop.run_until_complete(
+                self._mount_manager.mount_remote(remote_name, read_only, network_mode)
+            )
             
-            response = loop.run_until_complete(self._client.mount(fs_string, mount_point))
-            
-            # Refrescar lista para actualizar UI (punto verde)
-            # (Usamos el mismo loop antes de cerrar)
-            loop.run_until_complete(self._enrich_remotes_data())
             loop.close()
             
-            self.logger.info(f"Mount response: {response}")
-            
-            # 3. Abrir en Dolphin (Explorer)
-            if response and "err" not in response:
-                 self.logger.info(f"Opening Dolphin at {mount_point}")
-                 subprocess.Popen(["xdg-open", mount_point])
-                 NotificationManager.send("Drive Mounted", f"{remote_name} is now available.")
+            # 3. Handle Result
+            if result.get("success"):
+                if result.get("already_mounted"):
+                     NotificationManager.send("Drive Ready", f"{remote_name} is already available.")
+                else:
+                     NotificationManager.send("Drive Mounted", f"{remote_name} is now available.")
+                
+                # Open Dolphin
+                mount_point = result.get("mount_point")
+                if mount_point:
+                    self.logger.info(f"Opening Dolphin at {mount_point}")
+                    import subprocess
+                    subprocess.Popen(["xdg-open", mount_point])
+
             else:
-                 self.logger.error("Mount failed")
-                 NotificationManager.send("Mount Failed", f"Could not mount {remote_name}", urgency="critical")
+                 error_msg = result.get("error", "Unknown Error")
+                 self.logger.error(f"Mount failed: {error_msg}. Result: {result}")
+                 NotificationManager.send("Mount Failed", f"Error: {error_msg}", urgency="critical")
 
         except Exception as e:
             self.logger.exception(f"Error mounting {remote_name}")
             NotificationManager.send("Mount Error", str(e), urgency="critical")
+        
+        finally:
+            # Clear loading state
+            if remote_name in self._mounting_remotes:
+                self._mounting_remotes.remove(remote_name)
+            self.check_mount_status()
+
+    @pyqtSlot(str)
+    def unmount_remote(self, remote_name):
+        from core.notifications import NotificationManager
+        import asyncio
+        
+        self.logger.info(f"Unmounting {remote_name}...")
+        
+        try:
+             loop = asyncio.new_event_loop()
+             asyncio.set_event_loop(loop)
+             
+             success = loop.run_until_complete(self._mount_manager.unmount_remote(remote_name))
+             loop.close()
+             
+             if success:
+                 NotificationManager.send("Drive Unmounted", f"{remote_name} has been unmounted.")
+                 self.check_mount_status()
+             else:
+                 NotificationManager.send("Unmount Failed", "Could not unmount drive. Is it busy?", urgency="critical")
+             
+        except Exception as e:
+             self.logger.exception(f"Error unmounting {remote_name}")
