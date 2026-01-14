@@ -427,6 +427,14 @@ class MainViewModel(QObject):
             if remote_name in self._mounting_remotes:
                 self._mounting_remotes.remove(remote_name)
             self.check_mount_status()
+            self.logger.exception(f"Error mounting {remote_name}")
+            NotificationManager.send("Mount Error", str(e), urgency="critical")
+        
+        finally:
+            # Clear loading state
+            if remote_name in self._mounting_remotes:
+                self._mounting_remotes.remove(remote_name)
+            self.check_mount_status()
 
     @pyqtSlot(str)
     def unmount_remote(self, remote_name):
