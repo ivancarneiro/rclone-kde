@@ -1,10 +1,22 @@
 #!/bin/bash
-# Debug Logging (Enabled for troubleshooting)
-LOGFILE="/home/ciex/Rclone-GUI/LiveApp/debug.log"
-exec > >(tee -i "$LOGFILE") 2>&1
 
-echo "--- Launching Rclone Manager at $(date) ---"
+# Detectar el directorio donde se encuentra este script para hacerlo portable
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
 
-cd "/home/ciex/Rclone-GUI/LiveApp"
-source .venv/bin/activate
-python3 src/main.py
+# Configurar logs en ~/.cache
+LOG_DIR="$HOME/.cache"
+mkdir -p "$LOG_DIR"
+LOGFILE="$LOG_DIR/rclone-kde-start.log"
+
+echo "--- Launching Rclone Manager at $(date) ---" >> "$LOGFILE"
+
+# Verificar y activar el entorno virtual
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+    # Ejecutar la aplicación redirigiendo salida al log
+    python3 src/main.py >> "$LOGFILE" 2>&1
+else
+    echo "Error: .venv no encontrado en $SCRIPT_DIR. Por favor, ejecuta setup.sh primero." | tee -a "$LOGFILE"
+    exit 1
+fi
