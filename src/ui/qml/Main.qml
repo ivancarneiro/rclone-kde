@@ -84,6 +84,15 @@ ApplicationWindow {
             }
 
             Button {
+                text: "Activity Monitor"
+                Layout.fillWidth: true
+                onClicked: {
+                    stackView.push(Qt.resolvedUrl("ActivityView.qml"))
+                    drawer.close()
+                }
+            }
+
+            Button {
                 text: "Sync Tasks (Bisync)"
                 Layout.fillWidth: true
                 onClicked: {
@@ -184,25 +193,57 @@ ApplicationWindow {
                                 font.pixelSize: 16
                                 font.bold: true
                             }
-                            Label {
-                                text: modelData.detail || "Google Drive"
-                                color: "#AAA" // Gris claro
-                                font.pixelSize: 12
+                            // Row 2: Detail + Strategy Chip
+                            RowLayout {
+                                spacing: 8
+                                
+                                Label {
+                                    text: modelData.detail || "Google Drive"
+                                    color: "#AAA"
+                                    font.pixelSize: 12
+                                }
+                                
+                                // Strategy Chip
+                                Rectangle {
+                                    visible: modelData.sync_strategy !== undefined && modelData.sync_strategy !== ""
+                                    color: "#333"
+                                    radius: 4
+                                    width: strategyLabelMain.width + 10
+                                    height: 16
+                                    Label {
+                                        id: strategyLabelMain
+                                        anchors.centerIn: parent
+                                        text: (modelData.sync_strategy || "").toUpperCase()
+                                        font.pixelSize: 8
+                                        font.bold: true
+                                        color: "#DDD"
+                                    }
+                                }
                             }
                             
+                            // Row 3: Quota
                             RowLayout {
                                 visible: modelData.quota !== undefined && modelData.quota !== ""
                                 spacing: 5
+                                
+                                Rectangle {
+                                    width: 100
+                                    height: 4
+                                    color: "#444"
+                                    radius: 2
+                                    
+                                    Rectangle {
+                                        width: parent.width * (modelData.storage_percent || 0.0)
+                                        height: parent.height
+                                        color: (modelData.storage_percent || 0) > 0.9 ? "#EF5350" : "#4CAF50"
+                                        radius: 2
+                                    }
+                                }
+                                
                                 Label {
-                                    text: "Storage:"
+                                    text: "Storage: " + modelData.quota
                                     color: "#888"
                                     font.pixelSize: 11
-                                }
-                                Label {
-                                    text: modelData.quota
-                                    color: "#DDD"
-                                    font.pixelSize: 11
-                                    font.bold: true
                                 }
                             }
                         }
@@ -213,19 +254,48 @@ ApplicationWindow {
                             anchors.rightMargin: 10
                             spacing: 10
 
+                            // LOADING SPINNER
+                            BusyIndicator {
+                                running: modelData.is_loading
+                                visible: modelData.is_loading
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            // Button 1: Mount / Open
                             Button {
+                                visible: !modelData.is_loading
                                 text: modelData.is_mounted ? "Open" : "Mount"
                                 onClicked: {
                                     if (modelData.is_mounted) {
-                                        // Abrir carpeta si ya está montado
                                         Qt.openUrlExternally("file://" + "/home/ciex/RcloneMounts/" + modelData.name)
                                     } else {
-                                        mainViewModel.mount_remote(modelData.name)
+                                        // Default mount (RW)
+                                        mainViewModel.mount_remote(modelData.name, false, false)
                                     }
                                 }
                             }
+
+                            // Settings Button (Mount Options) - Only if NOT mounted
+                            Button {
+                                visible: !modelData.is_mounted && !modelData.is_loading
+                                text: "⚙️"
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Advanced Mount Options"
+                                onClicked: {
+                                    mountOptionsDialog.remoteName = modelData.name
+                                    mountOptionsDialog.open()
+                                }
+                            }
+                            
+                            // Button 2: Unmount (Only if mounted)
+                            Button {
+                                visible: modelData.is_mounted && !modelData.is_loading
+                                text: "Unmount"
+                                onClicked: mainViewModel.unmount_remote(modelData.name)
+                            }
                             
                             Button {
+                                visible: !modelData.is_loading
                                 text: "🗑️" // Trash Icon
                                 onClicked: {
                                     root.remoteToDelete = modelData.name
@@ -245,5 +315,9 @@ ApplicationWindow {
                 }
             }
         }
+    }
+    MountOptionsDialog {
+        id: mountOptionsDialog
+        anchors.centerIn: parent
     }
 }

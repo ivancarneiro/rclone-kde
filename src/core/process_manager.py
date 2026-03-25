@@ -2,6 +2,7 @@ import subprocess
 import time
 import logging
 import shutil
+import os
 
 class RcloneProcessManager:
     """
@@ -45,23 +46,41 @@ class RcloneProcessManager:
 
         # TODO: Verificar si el puerto ya está en uso
         
+        # Prepare environment with password
+        env = os.environ.copy()
+        env["RCLONE_RC_PASS"] = self.rc_pass
+
         cmd = [
             "rclone", "rcd",
             f"--rc-addr={self.rc_addr}",
             f"--rc-user={self.rc_user}",
-            f"--rc-pass={self.rc_pass}",
+            # "--rc-pass" removed for security (passed via env)
+            "--rc-no-auth" if not self.rc_pass else "", # Fallback logic if pass is empty
             f"--config={self.rc_conf}", # Usar config aislado
             "--drive-acknowledge-abuse"
         ]
+        
+        # Remove empty strings from cmd
+        cmd = [c for c in cmd if c]
 
+        # Add maximum verbosity for detailed debugging
+        cmd.insert(2, "-vv")
+
+        self.logger.info(f"Starting Rclone Daemon on {self.rc_addr}")
+        
         try:
+            # Redirigir la salida a un archivo para depuración
+            log_path = os.path.expanduser("~/.cache/rclone-kde.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            self.log_file = open(log_path, "a")
             self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                cmd, 
+                stdout=self.log_file, 
+                stderr=subprocess.STDOUT,
+                env=env
             )
-            self.logger.info(f"Rclone daemon started (PID: {self.process.pid})")
-            time.sleep(3) # Dar tiempo extra para inicializar API y Config
+            self.logger.info(f"Rclone daemon started (PID: {self.process.pid}). Logs at {log_path}")
+            time.sleep(3) 
             return True
         except Exception as e:
             self.logger.exception("Failed to start rclone daemon")

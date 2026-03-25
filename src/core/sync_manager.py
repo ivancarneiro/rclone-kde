@@ -36,13 +36,14 @@ class SyncManager:
     def get_tasks(self):
         return self._tasks
 
-    def add_task(self, name, local_path, remote_path, remote_name):
+    def add_task(self, name, local_path, remote_path, remote_name, strategy="bisync"):
         task = {
             "id": len(self._tasks) + 1, # Simple ID generation
             "name": name,
             "local_path": local_path,
             "remote_path": remote_path,
             "remote_name": remote_name,
+            "strategy": strategy,
             "last_sync": "Never",
             "status": "Idle"
         }
@@ -62,14 +63,22 @@ class SyncManager:
                     t["last_sync"] = last_sync
         self.save_tasks()
 
-    def update_task(self, task_id, name, local_path, remote_path, remote_name):
+    def update_task(self, task_id, name, local_path, remote_path, remote_name, strategy="bisync"):
         for t in self._tasks:
             if t["id"] == task_id:
                 t["name"] = name
                 t["local_path"] = local_path
                 t["remote_path"] = remote_path
                 t["remote_name"] = remote_name
+                t["strategy"] = strategy
                 # Reset status if changed
                 t["status"] = "Idle" 
                 break
         self.save_tasks()
+
+    def get_strategy_for_remote(self, remote_name):
+        """Returns the sync strategy (bisync/sync/copy) for a given remote, or None."""
+        for t in self._tasks:
+            if t.get("remote_name") == remote_name:
+                return t.get("strategy", "bisync") # Default to bisync for old tasks
+        return None

@@ -141,16 +141,32 @@ Page {
                     spacing: 5
                     
                     BusyIndicator {
-                        running: modelData.status === "Syncing..."
-                        visible: modelData.status === "Syncing..."
+                        running: modelData.status.indexOf("...") >= 0
+                        visible: running
                         Layout.preferredHeight: 16
                         Layout.preferredWidth: 16
                     }
 
+                    // Strategy Chip
+                    Rectangle {
+                        color: "#333"
+                        radius: 4
+                        width: strategyLabel.width + 10
+                        height: 18
+                        Label {
+                            id: strategyLabel
+                            anchors.centerIn: parent
+                            text: (modelData.strategy || "bisync").toUpperCase()
+                            font.pixelSize: 9
+                            font.bold: true
+                            color: "#AAA"
+                        }
+                    }
+
                     Label {
-                        text: "Status: " + modelData.status + " (Last: " + modelData.last_sync + ")"
+                        text: modelData.status + " (Last: " + modelData.last_sync + ")"
                         font.pixelSize: 11
-                        color: modelData.status === "Error" ? "red" : (modelData.status === "Syncing..." ? "#4CAF50" : "green") // GreenText for syncing too
+                        color: modelData.status === "Error" ? "red" : (modelData.status.indexOf("...") >= 0 ? "#4CAF50" : "green")
                     }
                 }
             }
@@ -161,8 +177,15 @@ Page {
                 anchors.rightMargin: 10
                 
                 Button {
+                    text: "👁️" // Eye icon for Simulate
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Simulate (Dry Run)"
+                    onClicked: syncViewModel.run_sync(modelData.id, false, true) // force=False, dry_run=True
+                }
+
+                Button {
                     text: "Sync Now"
-                    onClicked: syncViewModel.run_sync(modelData.id)
+                    onClicked: syncViewModel.run_sync(modelData.id, false, false)
                 }
 
                 Button {
@@ -188,6 +211,10 @@ Page {
                         // Find and set remote combo box
                         var idx = remoteName.indexOfValue(modelData.remote_name)
                         if (idx >= 0) remoteName.currentIndex = idx
+
+                        // Find and set strategy
+                        var sIdx = strategyCombo.indexOfValue(modelData.strategy || "bisync")
+                        if (sIdx >= 0) strategyCombo.currentIndex = sIdx
                         
                         newTaskDialog.open()
                     }
@@ -265,20 +292,22 @@ Page {
         
         onAccepted: {
             var rName = remoteName.currentValue || remoteName.text 
+            var strategy = strategyCombo.currentValue
             
             if (taskName.text !== "" && localPath.text !== "" && rName !== "") {
                 if (root.currentTaskId === -1) {
                     // New Task
-                    syncViewModel.add_task(taskName.text, localPath.text, rName, remotePath.text)
+                    syncViewModel.add_task(taskName.text, localPath.text, rName, remotePath.text, strategy)
                 } else {
                     // Edit Task
-                    syncViewModel.edit_task(root.currentTaskId, taskName.text, localPath.text, rName, remotePath.text)
+                    syncViewModel.edit_task(root.currentTaskId, taskName.text, localPath.text, rName, remotePath.text, strategy)
                 }
                 
                 // Clear fields
                 taskName.text = ""
                 localPath.text = ""
                 remotePath.text = ""
+                strategyCombo.currentIndex = 0
                 root.currentTaskId = -1
             }
         }
@@ -291,6 +320,22 @@ Page {
                 id: taskName
                 placeholderText: "Task Name (e.g. Work Docs)"
                 Layout.fillWidth: true
+            }
+            
+            RowLayout {
+                Label { text: "Strategy:" }
+                HelpIcon { text: "<b>Bisync:</b> Two-way mirror (Merge changes)<br><b>Backup:</b> Upload Local -> Cloud (Deletes on Cloud if missing in Local)<br><b>Download:</b> Download Cloud -> Local" }
+            }
+            ComboBox {
+                id: strategyCombo
+                Layout.fillWidth: true
+                textRole: "text"
+                valueRole: "value"
+                model: [
+                    { text: "🔄 Bidirectional (Mirror)", value: "bisync" },
+                    { text: "⬆️ Backup (Local -> Cloud)", value: "sync" },
+                    { text: "⬇️ Download (Cloud -> Local)", value: "copy" }
+                ]
             }
             
             RowLayout {

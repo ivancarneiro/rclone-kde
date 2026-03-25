@@ -65,3 +65,11 @@ class RcloneClient:
     async def job_status(self, job_id):
         """Consulta el estado de un trabajo asíncrono."""
         return await self._post("job/status", {"jobid": job_id})
+
+    async def core_stats(self):
+        """Devuelve estadísticas globales de transferencia (core/stats)."""
+        return await self._post("core/stats")
+
+    async def rc_call(self, method, params=None):
+        """Wrapper genérico para llamadas RC."""
+        return await self._post(method, params)
