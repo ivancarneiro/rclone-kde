@@ -50,7 +50,8 @@ class RcloneProcessManager:
             f"--rc-addr={self.rc_addr}",
             f"--rc-user={self.rc_user}",
             f"--rc-pass={self.rc_pass}",
-            f"--config={self.rc_conf}" # Usar config aislado
+            f"--config={self.rc_conf}", # Usar config aislado
+            "--drive-acknowledge-abuse"
         ]
 
         try:

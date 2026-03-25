@@ -92,6 +92,7 @@ class SyncViewModel(QObject):
             local, remote, 
             "--verbose",
             "--config", Config.RCLONE_CONF,
+            "--drive-acknowledge-abuse",
             "--max-delete", "5" # SAFETY BELT: Prevent massive deletions
         ]
         
