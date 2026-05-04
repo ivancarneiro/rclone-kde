@@ -36,9 +36,27 @@ class MountManager:
 
     def cleanup_zombie(self, mount_point):
         """Attempts to remove a stale mount using fusermount -uz"""
-        if os.path.exists(mount_point):
+        # If the mount is zombie (ENOTCONN), os.path.exists might hang or fail.
+        # If it is a directory, we should try unmounting it anyway to be safe.
+        if os.path.isdir(mount_point):
              self.logger.info(f"Cleaning up potential zombie mount at {mount_point}...")
              subprocess.run(["fusermount", "-uz", mount_point], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def cleanup_all(self):
+        """Force unmounts everything in the Config.mount_dir"""
+        mount_dir = Config.mount_dir
+        if not os.path.exists(mount_dir):
+            return
+            
+        self.logger.info(f"Performing global mount cleanup in {mount_dir}...")
+        try:
+            for item in os.listdir(mount_dir):
+                path = os.path.join(mount_dir, item)
+                if os.path.isdir(path):
+                    self.logger.info(f"Cleaning up {path}...")
+                    subprocess.run(["fusermount", "-uz", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            self.logger.error(f"Global cleanup failed: {e}")
 
     async def mount_remote(self, remote_name, read_only=False, network_mode=False):
         """

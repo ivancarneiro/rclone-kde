@@ -13,6 +13,7 @@ from core.config import Config
 from core.sync_manager import SyncManager
 from core.settings_manager import SettingsManager
 from core.autostart_manager import AutostartManager
+from core.mount_manager import MountManager
 from ui.viewmodels.main_vm import MainViewModel
 from ui.viewmodels.wizard_vm import WizardViewModel
 from ui.viewmodels.sync_vm import SyncViewModel
@@ -121,24 +122,14 @@ def main():
     # Trigger Sync All
     sync_vm.sync_all_on_startup()
     
-    # Cleanup logic...
+    # Initialize Mount Manager for global cleanup
+    mm = MountManager(client)
+    mm.cleanup_all()
 
     # Cleanup on exit
     def cleanup(*args):
-        # 1. Unmount all active mounts to prevent "File exists" errors on next run
-        try:
-            logging.info("Cleaning up mounts...")
-            mount_dir = Config.mount_dir
-            if os.path.exists(mount_dir):
-                for item in os.listdir(mount_dir):
-                    path = os.path.join(mount_dir, item)
-                    if os.path.ismount(path):
-                        logging.info(f"Unmounting {path} (lazy)...")
-                        import subprocess
-                        # -z (lazy): Detach immediately, cleanup when free. Solve "Target is busy".
-                        subprocess.run(["fusermount", "-uz", path], check=False)
-        except Exception as e:
-            logging.error(f"Error cleaning up mounts: {e}")
+        # 1. Unmount all active mounts
+        mm.cleanup_all()
 
         # 2. Stop Daemon
         pm.stop_daemon()
