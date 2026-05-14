@@ -136,7 +136,12 @@ class SyncViewModel(QObject):
              cmd.extend(["copy", remote, local])
              
         # Common flags
-        cmd.extend(["--verbose", "--config", Config.RCLONE_CONF])
+        cmd.extend([
+            "--verbose", 
+            "--config", Config.RCLONE_CONF,
+            "--exclude", "*.img",
+            "--exclude", "*.iso"
+        ])
         
         if dry_run:
             cmd.append("--dry-run")

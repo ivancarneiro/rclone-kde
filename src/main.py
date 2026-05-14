@@ -9,40 +9,35 @@ import os
 
 from core.process_manager import RcloneProcessManager
 from core.rclone_client import RcloneClient
-from core.config import Config
 from core.sync_manager import SyncManager
 from core.settings_manager import SettingsManager
 from core.autostart_manager import AutostartManager
+from core.config import Config
 from ui.viewmodels.main_vm import MainViewModel
-from ui.viewmodels.wizard_vm import WizardViewModel
 from ui.viewmodels.sync_vm import SyncViewModel
 from ui.viewmodels.settings_vm import SettingsViewModel
-from ui.viewmodels.activity_vm import ActivityViewModel
 
 def setup_tray(app, icon_path, main_vm):
     tray_icon = QSystemTrayIcon(QIcon(icon_path), app)
-    tray_icon.setToolTip(Config.APP_NAME)
-    
     menu = QMenu()
     
-    action_show = QAction("Show Rclone Manager", menu)
+    action_show = QAction("Show Manager", menu)
     action_show.triggered.connect(main_vm.show_window)
-    menu.addAction(action_show)
+    
+    action_hide = QAction("Hide", menu)
+    action_hide.triggered.connect(main_vm.hide_window)
     
     menu.addSeparator()
     
-    action_quit = QAction("Quit", menu)
+    action_quit = QAction("Exit", menu)
     action_quit.triggered.connect(main_vm.quit_app)
+    
+    menu.addAction(action_show)
+    menu.addAction(action_hide)
+    menu.addSeparator()
     menu.addAction(action_quit)
     
     tray_icon.setContextMenu(menu)
-    
-    # Click behavior
-    def on_tray_activated(reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            main_vm.show_window()
-            
-    tray_icon.activated.connect(on_tray_activated)
     tray_icon.show()
     return tray_icon
 
@@ -50,10 +45,11 @@ def main():
     logging.basicConfig(level=logging.INFO)
     
     # Init Backend
+    rc_password = Config.get_rc_pass()
     pm = RcloneProcessManager(
         rc_addr=Config.RC_ADDR, 
         rc_user=Config.RC_USER, 
-        rc_pass=Config.get_rc_pass(),
+        rc_pass=rc_password,
         rc_conf=Config.RCLONE_CONF
     )
     if not pm.start_daemon():
@@ -62,57 +58,42 @@ def main():
     client = RcloneClient(
         url=Config.get_rc_url(), 
         user=Config.RC_USER, 
-        password=Config.get_rc_pass()
+        password=rc_password
     )
 
     sync_manager = SyncManager()
     settings_manager = SettingsManager()
     autostart_manager = AutostartManager()
-
-    # Init UI
+    
     app = QApplication(sys.argv)
-    app.setOrganizationName("Antigravity")
-    app.setApplicationName(Config.APP_NAME)
-    app.setQuitOnLastWindowClosed(False) # Keep running when minimized
-    
-    icon_path = os.path.join(os.path.dirname(__file__), "ui/assets/rclone_logo.png")
-    app_icon = QIcon(icon_path)
-    app.setWindowIcon(app_icon)
-
-    engine = QQmlApplicationEngine() 
-    
-    start_minimized_arg = "--minimized" in sys.argv
-    if start_minimized_arg:
-         logging.info("Startup flag --minimized detected.")
+    app.setQuitOnLastWindowClosed(False)
 
     # ViewModels
     main_vm = MainViewModel(client, settings_manager, sync_manager)
-    wizard_vm = WizardViewModel(client, settings_manager, autostart_manager)
     sync_vm = SyncViewModel(sync_manager, client)
-    settings_vm = SettingsViewModel(settings_manager, client, autostart_manager)
-    activity_vm = ActivityViewModel(client, sync_vm)
+    settings_vm = SettingsViewModel(settings_manager, autostart_manager, client)
+
+    # UI Engine
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("main_vm", main_vm)
+    engine.rootContext().setContextProperty("sync_vm", sync_vm)
+    engine.rootContext().setContextProperty("settings_vm", settings_vm)
     
-    engine.rootContext().setContextProperty("mainViewModel", main_vm)
-    engine.rootContext().setContextProperty("wizardViewModel", wizard_vm)
-    engine.rootContext().setContextProperty("syncViewModel", sync_vm)
-    engine.rootContext().setContextProperty("settingsViewModel", settings_vm)
-    engine.rootContext().setContextProperty("activityViewModel", activity_vm)
-
-    # Load QML
-    qml_file = QUrl.fromLocalFile("src/ui/qml/Main.qml")
-    engine.load(qml_file)
-
+    engine.load(QUrl.fromLocalFile("src/ui/qml/Main.qml"))
+    
     if not engine.rootObjects():
         sys.exit(-1)
-        
-    # Get Window reference and Setup Tray
-    root_window = engine.rootObjects()[0]
-    main_vm.set_window(root_window)
+
+    icon_path = os.path.abspath("src/ui/assets/icon.png")
     
     # Setup Tray with a slight delay to avoid DBus race conditions in Plasma 6
     from PyQt6.QtCore import QTimer
     QTimer.singleShot(1500, lambda: setup_tray(app, icon_path, main_vm))
 
+    # Get Window reference and Setup Tray
+    root_window = engine.rootObjects()[0]
+    main_vm.set_window(root_window)
+    
     # Check for Start Minimized preference
     if settings_manager.get_start_minimized():
         logging.info("Starting minimized to tray.")
@@ -123,26 +104,8 @@ def main():
     # Trigger Sync All
     sync_vm.sync_all_on_startup()
     
-    # Cleanup logic...
-
     # Cleanup on exit
     def cleanup(*args):
-        # 1. Unmount all active mounts to prevent "File exists" errors on next run
-        try:
-            logging.info("Cleaning up mounts...")
-            mount_dir = Config.mount_dir
-            if os.path.exists(mount_dir):
-                for item in os.listdir(mount_dir):
-                    path = os.path.join(mount_dir, item)
-                    if os.path.ismount(path):
-                        logging.info(f"Unmounting {path} (lazy)...")
-                        import subprocess
-                        # -z (lazy): Detach immediately, cleanup when free. Solve "Target is busy".
-                        subprocess.run(["fusermount", "-uz", path], check=False)
-        except Exception as e:
-            logging.error(f"Error cleaning up mounts: {e}")
-
-        # 2. Stop Daemon
         pm.stop_daemon()
         app.quit()
         

@@ -52,65 +52,49 @@ class MountManager:
 
     async def mount_remote(self, remote_name, read_only=False, network_mode=False):
         """
-        Mounts a remote with specified options. 
-        Handles Cleanup -> Command -> Wait Job -> Verify.
+        Mounts a remote using direct subprocess with exclusions for heavy files.
+        This bypasses RC API timeouts and ensures .img/.iso are never processed.
         """
         mount_point = self.get_mount_point(remote_name)
-        fs_string = f"{remote_name}:"
-
+        
         # 1. System Check
         if self.is_mounted_system(mount_point):
             self.logger.info(f"Skipping mount for {remote_name}: Already mounted (System).")
-            return {"success": True, "already_mounted": True, "mount_point": mount_point}
+            return {"success": True, "already_mounted": True, "mount_point": mount_point, "remote_name": remote_name}
 
         # 2. Cleanup Zombie
         self.cleanup_zombie(mount_point)
         os.makedirs(mount_point, exist_ok=True)
 
-        # 3. Prepare Options
-        mount_opt = {
-            "readOnly": read_only
-        }
+        # 3. Build Command
+        cmd = [
+            "rclone", "mount", f"{remote_name}:", mount_point,
+            "--vfs-cache-mode", "full",
+            "--vfs-cache-max-age", "24h",
+            "--exclude", "*.img",
+            "--exclude", "*.iso",
+            "--daemon",
+            "--config", Config.RCLONE_CONF
+        ]
         
-        vfs_opt = {
-            "cacheMode": "off" if network_mode else "full"
-        }
-        
-        if not network_mode:
-            vfs_opt["cacheMaxAge"] = 86400000000000 # 24h in ns
+        if read_only:
+            cmd.append("--read-only")
 
-        params = {
-            "fs": fs_string,
-            "mountPoint": mount_point,
-            "mountOpt": mount_opt,
-            "vfsOpt": vfs_opt,
-            "_async": "true" 
-        }
-
-        # 4. Execute RC Call
-        self.logger.info(f"Sending mount command for {remote_name}...")
+        self.logger.info(f"Executing direct mount: {' '.join(cmd)}")
         try:
-            response = await self._client.rc_call("mount/mount", params)
-            
-            # 5. Wait for Job
-            if response and "jobid" in response:
-                job_id = response["jobid"]
-                self.logger.info(f"Mount job {job_id} started. Waiting...")
-                
-                success, error = await self._wait_for_job(job_id)
-                if success:
-                    return {"success": True, "mount_point": mount_point}
-                else:
-                    return {"success": False, "error": error}
-            
-            # Fallback if no jobid (unexpected)
-            if response and "err" not in response:
-                 return {"success": True, "mount_point": mount_point}
+            # Aumentamos el timeout a 60s porque GDrive puede ser lento al indexar inicialmente
+            process = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if process.returncode == 0:
+                self.logger.info(f"Mount command successful for {remote_name}")
+                return {"success": True, "mount_point": mount_point, "remote_name": remote_name}
             else:
-                 return {"success": False, "error": response.get("error", "Unknown error")}
-
+                self.logger.error(f"Mount command failed: {process.stderr}")
+                return {"success": False, "error": process.stderr}
+        except subprocess.TimeoutExpired as te:
+            self.logger.error(f"Mount command timed out. Stdout: {te.stdout}, Stderr: {te.stderr}")
+            return {"success": False, "error": "Timeout de 60s excedido al montar. GDrive está lento."}
         except Exception as e:
-            self.logger.exception(f"Mount exception for {remote_name}")
+            self.logger.exception(f"Direct mount exception for {remote_name}")
             return {"success": False, "error": str(e)}
 
     async def unmount_remote(self, remote_name):
