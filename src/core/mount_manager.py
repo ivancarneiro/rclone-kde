@@ -129,16 +129,17 @@ class MountManager:
              self.logger.exception(f"Unmount error for {remote_name}")
              return False
 
-    async def _wait_for_job(self, job_id, timeout_sec=5):
+    async def _wait_for_job(self, job_id, timeout_sec=30):
         """Polls job status until finished."""
         import time
-        steps = int(timeout_sec / 0.5)
-        for _ in range(steps):
+        steps = int(timeout_sec / 1.0)
+        for i in range(steps):
             job_status = await self._client.job_status(job_id)
             if job_status.get("finished"):
                 if job_status.get("error"):
                     return False, job_status["error"]
                 return True, None
             # Async sleep
-            await asyncio.sleep(0.5)
-        return False, "Timeout waiting for mount job"
+            self.logger.debug(f"Waiting for mount job {job_id}... (step {i}/{steps})")
+            await asyncio.sleep(1.0)
+        return False, f"Timeout waiting for mount job after {timeout_sec}s"
