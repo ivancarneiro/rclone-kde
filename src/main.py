@@ -75,9 +75,13 @@ def main():
 
     # UI Engine
     engine = QQmlApplicationEngine()
+    # Provide both styles to be safe with QML files
     engine.rootContext().setContextProperty("mainViewModel", main_vm)
+    engine.rootContext().setContextProperty("main_vm", main_vm)
     engine.rootContext().setContextProperty("syncViewModel", sync_vm)
+    engine.rootContext().setContextProperty("sync_vm", sync_vm)
     engine.rootContext().setContextProperty("settingsViewModel", settings_vm)
+    engine.rootContext().setContextProperty("settings_vm", settings_vm)
     
     engine.load(QUrl.fromLocalFile("src/ui/qml/Main.qml"))
     
