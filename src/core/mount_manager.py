@@ -35,10 +35,20 @@ class MountManager:
             return []
 
     def cleanup_zombie(self, mount_point):
-        """Attempts to remove a stale mount using fusermount -uz"""
-        if os.path.exists(mount_point):
-             self.logger.info(f"Cleaning up potential zombie mount at {mount_point}...")
-             subprocess.run(["fusermount", "-uz", mount_point], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        """Attempts to remove a stale mount using fusermount -uz and cleans the directory."""
+        try:
+            # Forzar desmontaje aunque esté roto
+            self.logger.info(f"Forcing unmount for potential zombie at {mount_point}...")
+            subprocess.run(["fusermount", "-uz", mount_point], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Si después del desmontaje el directorio sigue existiendo y está vacío, lo borramos para asegurar limpieza
+            if os.path.exists(mount_point):
+                if not os.path.ismount(mount_point):
+                    self.logger.info(f"Removing stale directory {mount_point}...")
+                    import shutil
+                    shutil.rmtree(mount_point, ignore_errors=True)
+        except Exception as e:
+            self.logger.warning(f"Cleanup zombie failed for {mount_point}: {e}")
 
     async def mount_remote(self, remote_name, read_only=False, network_mode=False):
         """
