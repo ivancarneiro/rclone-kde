@@ -54,23 +54,24 @@ class RcloneProcessManager:
         cmd = [
             "rclone", "rcd",
             f"--rc-addr={self.rc_addr}",
-            "--rc-user=rclone",
-            # "--rc-pass" removed for security (passed via env)
-            "--rc-no-auth" if not self.rc_pass else "", # Fallback logic if pass is empty
-            "--config", self.rc_conf
+            f"--rc-user={self.rc_user}",
+            "--rc-no-auth" if not self.rc_pass else "", 
+            "--config", self.rc_conf,
+            "-vv" # Verbose logging for diagnosis
         ]
         
         # Remove empty strings from cmd
         cmd = [c for c in cmd if c]
 
-        self.logger.info(f"Starting Rclone Daemon on {self.rc_addr}")
-        # Log command without environment to avoid leaking? standard log doesn't show env usually.
+        self.logger.info(f"Starting Rclone Daemon on {self.rc_addr} with user {self.rc_user}")
         
         try:
+            # Abrir archivo de log para el daemon (modo overwrite para no crecer infinito)
+            log_file = open("rclone_daemon.log", "w")
             self.process = subprocess.Popen(
                 cmd, 
-                stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL,
+                stdout=log_file, 
+                stderr=log_file,
                 env=env # Pass secure env
             )
             self.logger.info(f"Rclone daemon started (PID: {self.process.pid})")
