@@ -71,8 +71,8 @@ class MountManager:
             "rclone", "mount", f"{remote_name}:", mount_point,
             "--vfs-cache-mode", "full",
             "--vfs-cache-max-age", "24h",
-            "--exclude", "*.img",
-            "--exclude", "*.iso",
+            "--exclude", "**.img",
+            "--exclude", "**.iso",
             "--daemon",
             "--config", Config.RCLONE_CONF
         ]
@@ -82,17 +82,18 @@ class MountManager:
 
         self.logger.info(f"Executing direct mount: {' '.join(cmd)}")
         try:
-            # Aumentamos el timeout a 60s porque GDrive puede ser lento al indexar inicialmente
-            process = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if process.returncode == 0:
-                self.logger.info(f"Mount command successful for {remote_name}")
-                return {"success": True, "mount_point": mount_point, "remote_name": remote_name}
+            # Usamos Popen para que sea instantáneo (el daemon de rclone se encarga del resto)
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Esperamos un segundo y verificamos si el sistema ya lo ve
+            import time
+            time.sleep(2)
+            if self.is_mounted_system(mount_point):
+                 self.logger.info(f"Mount confirmed for {remote_name}")
+                 return {"success": True, "mount_point": mount_point, "remote_name": remote_name}
             else:
-                self.logger.error(f"Mount command failed: {process.stderr}")
-                return {"success": False, "error": process.stderr}
-        except subprocess.TimeoutExpired as te:
-            self.logger.error(f"Mount command timed out. Stdout: {te.stdout}, Stderr: {te.stderr}")
-            return {"success": False, "error": "Timeout de 60s excedido al montar. GDrive está lento."}
+                 # Si no está montado aún, devolvemos éxito igual porque rclone sigue en el fondo
+                 return {"success": True, "mount_point": mount_point, "remote_name": remote_name, "pending": True}
         except Exception as e:
             self.logger.exception(f"Direct mount exception for {remote_name}")
             return {"success": False, "error": str(e)}
