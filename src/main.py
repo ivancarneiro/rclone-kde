@@ -109,7 +109,9 @@ def main():
     root_window = engine.rootObjects()[0]
     main_vm.set_window(root_window)
     
-    tray = setup_tray(app, icon_path, main_vm)
+    # Setup Tray with a slight delay to avoid DBus race conditions in Plasma 6
+    from PyQt6.QtCore import QTimer
+    QTimer.singleShot(1500, lambda: setup_tray(app, icon_path, main_vm))
 
     # Check for Start Minimized preference
     if settings_manager.get_start_minimized():

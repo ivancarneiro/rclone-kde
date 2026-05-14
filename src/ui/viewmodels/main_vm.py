@@ -82,48 +82,57 @@ class MainViewModel(QObject):
     @pyqtSlot()
     def check_mount_status(self):
         """Lighter refresh that only checks mount status (Smart Polling)"""
+        # Evitar crear nuevos loops. Si no hay loop corriendo, no intentamos checkear.
         try:
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(self._async_check_mount_status(), loop)
+            else:
+                # Fallback para cuando el loop no está corriendo (usar loop de un solo uso o thread)
+                self._sync_check_mount_status()
+        except Exception as e:
+            self.logger.debug(f"Mount check dispatch failed: {e}")
+
+    def _sync_check_mount_status(self):
+        """Versión sincrónica usando chequeo de sistema para no bloquear."""
+        changed = False
+        for remote in self._remotes:
+            name = remote['name']
+            mount_point = self._mount_manager.get_mount_point(name)
+            new_is_mounted = self._mount_manager.is_mounted_system(mount_point)
             
-            # Fetch ONLY active mounts (lightweight)
-            active_mounts = loop.run_until_complete(self._mount_manager.get_active_mounts())
-            
-            # Update local state without full re-fetch
+            if remote.get('is_mounted') != new_is_mounted:
+                remote['is_mounted'] = new_is_mounted
+                remote['status_color'] = "#4CAF50" if new_is_mounted else "#9E9E9E"
+                remote['detail'] = "Mounted" if new_is_mounted else remote.get('email', 'Ready')
+                changed = True
+        if changed:
+            self.remotesChanged.emit()
+
+    async def _async_check_mount_status(self):
+        """Versión asincrónica real que no bloquea el hilo de la UI."""
+        try:
+            active_mounts = await self._mount_manager.get_active_mounts()
             changed = False
             for remote in self._remotes:
                 name = remote['name']
                 fs_string = f"{name}:"
                 
-                # Check Mount Status
                 is_mounted_api = any(fs_string in m for m in active_mounts) or any(name in m for m in active_mounts)
                 mount_point = self._mount_manager.get_mount_point(name)
                 is_mounted_sys = self._mount_manager.is_mounted_system(mount_point)
                 
                 new_is_mounted = is_mounted_api or is_mounted_sys
-                
                 if remote.get('is_mounted') != new_is_mounted:
                     remote['is_mounted'] = new_is_mounted
                     remote['status_color'] = "#4CAF50" if new_is_mounted else "#9E9E9E"
                     remote['detail'] = "Mounted" if new_is_mounted else remote.get('email', 'Ready')
-                    if not new_is_mounted and 'email' in remote:
-                        remote['detail'] = remote['email']
                     changed = True
-                
-                # Update Loading State
-                is_loading = name in self._mounting_remotes
-                if remote.get('is_loading') != is_loading:
-                    remote['is_loading'] = is_loading
-                    changed = True
-
-            loop.close()
             
             if changed:
                 self.remotesChanged.emit()
-
         except Exception as e:
-            self.logger.debug(f"Mount check failed: {e}")
+            self.logger.debug(f"Async mount check failed: {e}")
 
     @pyqtSlot()
     def refresh_remotes(self):
