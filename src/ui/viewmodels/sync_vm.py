@@ -99,27 +99,8 @@ class SyncViewModel(QObject):
         local = task["local_path"]
         remote = f"{task['remote_name']}:{task['remote_path']}"
         
-        # Safety Checks: Local Path (With Retry for slow mounts)
-        import time
-        max_retries = 10
-        path_found = False
-        for i in range(max_retries):
-            if os.path.exists(local):
-                path_found = True
-                break
-            self.logger.info(f"Waiting for local path {local}... (attempt {i+1}/{max_retries})")
-            time.sleep(1.5) # Esperar a que FUSE asiente la carpeta
-
-        if not path_found:
-            self._on_sync_error(task_id, f"SAFETY: Local path '{local}' is missing after waiting. Aborting.")
-            return
-            
-        # Empty check is crucial for bisync, maybe less for copy (downloading to empty is fine)
-        # But for 'sync' (Backup), empty local means DELETE REMOTE. So vital for sync too.
-        # Empty check is crucial for 'sync' (Backup): Empty local means DELETE REMOTE.
-        # For 'bisync', Rclone has its own state DB and safety checks (--max-delete). 
-        # Blocking empty local for bisync prevents valid "Empty <-> Empty" syncs.
-        if strategy == "sync" and not os.listdir(local):
+        # Safety Checks: Local Path
+        if strategy == "sync" and os.path.exists(local) and not os.listdir(local):
             self._on_sync_error(task_id, f"SAFETY: Local folder is empty. This would wipe the remote (Backup). Aborting.")
             return
 

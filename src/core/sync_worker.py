@@ -19,7 +19,31 @@ class SyncWorker(QThread):
     def run(self):
         self.logger.info(f"Worker starting cmd: {self.command}")
         try:
-            # Usar Popen para leer streaming
+            # 1. Esperar a que la ruta local exista (útil para monturas recién lanzadas)
+            # Extraer ruta local del comando (asumimos rclone bisync/sync/copy local remote)
+            # Para simplificar, buscamos si alguna de las rutas en el comando existe
+            import os
+            import time
+            
+            path_to_wait = None
+            for arg in self.command:
+                if "/" in arg and not arg.startswith("-"):
+                    path_to_wait = arg
+                    break
+            
+            if path_to_wait and not path_to_wait.startswith("http"):
+                self.logger.info(f"Worker waiting for path: {path_to_wait}")
+                found = False
+                for _ in range(15):
+                    if os.path.exists(path_to_wait):
+                        found = True
+                        break
+                    time.sleep(1)
+                if not found:
+                    self.finished_error.emit(f"Local path {path_to_wait} did not appear after 15s")
+                    return
+
+            # 2. Ejecutar comando rclone
             process = subprocess.Popen(
                 self.command,
                 stdout=subprocess.PIPE,
