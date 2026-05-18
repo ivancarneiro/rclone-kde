@@ -72,7 +72,6 @@ class MountManager:
             "--vfs-cache-mode", "full",
             "--vfs-cache-max-age", "24h",
             "--volname", remote_name,
-            "--no-free-space-check",
             "--no-modtime",
             "--exclude", "**.img",
             "--exclude", "**.iso",
