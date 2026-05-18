@@ -82,18 +82,23 @@ class MountManager:
 
         self.logger.info(f"Executing direct mount: {' '.join(cmd)}")
         try:
-            # Usamos Popen para que sea instantáneo (el daemon de rclone se encarga del resto)
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Usamos Popen para lanzar rclone al fondo
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             
-            # Esperamos un segundo y verificamos si el sistema ya lo ve
-            import time
-            time.sleep(2)
-            if self.is_mounted_system(mount_point):
-                 self.logger.info(f"Mount confirmed for {remote_name}")
-                 return {"success": True, "mount_point": mount_point, "remote_name": remote_name}
-            else:
-                 # Si no está montado aún, devolvemos éxito igual porque rclone sigue en el fondo
-                 return {"success": True, "mount_point": mount_point, "remote_name": remote_name, "pending": True}
+            # Verificación por polling (máximo 10 segundos)
+            for i in range(10):
+                await asyncio.sleep(1.0) # Uso asyncio.sleep porque estamos en un método async
+                if self.is_mounted_system(mount_point):
+                    self.logger.info(f"Mount confirmed for {remote_name} after {i+1}s")
+                    return {"success": True, "mount_point": mount_point, "remote_name": remote_name}
+                
+                # Si el proceso murió rápido, hubo un error de rclone
+                if process.poll() is not None:
+                    _, stderr = process.communicate()
+                    self.logger.error(f"Rclone mount process exited early: {stderr}")
+                    return {"success": False, "error": stderr}
+
+            return {"success": False, "error": "El montaje se lanzó pero no aparece en el sistema (Timeout 10s)"}
         except Exception as e:
             self.logger.exception(f"Direct mount exception for {remote_name}")
             return {"success": False, "error": str(e)}
