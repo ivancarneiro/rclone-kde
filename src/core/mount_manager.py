@@ -65,17 +65,18 @@ class MountManager:
         # 2. Cleanup Zombie
         self.cleanup_zombie(mount_point)
         os.makedirs(mount_point, exist_ok=True)
-# 3. Build Command
-cmd = [
-    "rclone", "mount", f"{remote_name}:", mount_point,
-    "--vfs-cache-mode", "full",
-    "--vfs-cache-max-age", "24h",
-    "--volname", remote_name,
-    "--no-modtime",
-    "--max-size", "1G",
-    "--daemon",
-    "--config", Config.RCLONE_CONF
-]
+
+        # 3. Build Command
+        cmd = [
+            "rclone", "mount", f"{remote_name}:", mount_point,
+            "--vfs-cache-mode", "full",
+            "--vfs-cache-max-age", "24h",
+            "--volname", remote_name,
+            "--no-modtime",
+            "--max-size", "1G",
+            "--daemon",
+            "--config", Config.RCLONE_CONF
+        ]
         
         if read_only:
             cmd.append("--read-only")

@@ -14,7 +14,7 @@ class NotificationManager:
                     "notify-send", 
                     "--app-name=RcloneKDE", 
                     f"--urgency={urgency}",
-                    "--expire-time=5000", # 5 segundos
+                    "--expire-time=10000", # 10 segundos
                     title, 
                     message
                 ])
