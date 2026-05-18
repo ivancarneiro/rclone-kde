@@ -87,8 +87,8 @@ class MountManager:
             # Usamos Popen para lanzar rclone al fondo
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             
-            # Verificación por polling (máximo 10 segundos)
-            for i in range(10):
+            # Verificación por polling (máximo 30 segundos)
+            for i in range(30):
                 await asyncio.sleep(1.0) # Uso asyncio.sleep porque estamos en un método async
                 if self.is_mounted_system(mount_point):
                     self.logger.info(f"Mount confirmed for {remote_name} after {i+1}s")
@@ -100,7 +100,7 @@ class MountManager:
                     self.logger.error(f"Rclone mount process exited early: {stderr}")
                     return {"success": False, "error": stderr}
 
-            return {"success": False, "error": "El montaje se lanzó pero no aparece en el sistema (Timeout 10s)"}
+            return {"success": False, "error": "El montaje se lanzó pero no aparece en el sistema (Timeout 30s)"}
         except Exception as e:
             self.logger.exception(f"Direct mount exception for {remote_name}")
             return {"success": False, "error": str(e)}
