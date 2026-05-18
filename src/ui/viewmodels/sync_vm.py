@@ -130,8 +130,7 @@ class SyncViewModel(QObject):
         cmd.extend([
             "--verbose", 
             "--config", Config.RCLONE_CONF,
-            "--exclude", "**.img",
-            "--exclude", "**.iso"
+            "--max-size", "1G"
         ])
         
         if dry_run:
