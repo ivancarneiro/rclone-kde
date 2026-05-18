@@ -96,6 +96,13 @@ class MainViewModel(QObject):
         except Exception as e:
             self.logger.exception(f"Error processing status data: {e}")
 
+    def _process_auto_mounts(self):
+        auto_mounts = self._settings_manager.get_auto_mounts()
+        for remote in self._remotes:
+            name = remote['name']
+            if name in auto_mounts and not remote['is_mounted']:
+                self.mount_remote(name)
+
     @pyqtSlot(str, bool, bool)
     def mount_remote(self, remote_name, read_only=False, network_mode=False):
         try:
