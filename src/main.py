@@ -88,7 +88,7 @@ def main():
     if not engine.rootObjects():
         sys.exit(-1)
 
-    icon_path = os.path.abspath("src/ui/assets/rclone_isologo.png")
+    icon_path = os.path.abspath("src/ui/assets/icon.png")
     
     # Setup Tray with a slight delay to avoid DBus race conditions in Plasma 6
     from PyQt6.QtCore import QTimer
