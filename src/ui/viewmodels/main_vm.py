@@ -80,40 +80,40 @@ class MainViewModel(QObject):
 
     def _on_status_data_received(self, data):
         """Recibe los datos del worker y actualiza el modelo."""
-        self._remotes = data
-        
-        # Manejo de estados de carga locales
-        for remote in self._remotes:
-            remote['is_loading'] = remote['name'] in self._mounting_remotes
+        try:
+            self._remotes = data
             
-        self.remotesChanged.emit()
-        
-        # Procesar auto-montaje una sola vez
-        if not self._initial_load_done:
-            self._initial_load_done = True
-            self._process_auto_mounts()
-
-    def _process_auto_mounts(self):
-        auto_mounts = self._settings_manager.get_auto_mounts()
-        for remote in self._remotes:
-            name = remote['name']
-            if name in auto_mounts and not remote['is_mounted']:
-                self.mount_remote(name)
+            # Manejo de estados de carga locales
+            for remote in self._remotes:
+                remote['is_loading'] = remote['name'] in self._mounting_remotes
+                
+            self.remotesChanged.emit()
+            
+            # Procesar auto-montaje una sola vez
+            if not self._initial_load_done:
+                self._initial_load_done = True
+                self._process_auto_mounts()
+        except Exception as e:
+            self.logger.exception(f"Error processing status data: {e}")
 
     @pyqtSlot(str, bool, bool)
     def mount_remote(self, remote_name, read_only=False, network_mode=False):
-        if remote_name in self._mounting_remotes: return
-        
-        self.logger.info(f"Mounting {remote_name}...")
-        self._mounting_remotes.add(remote_name)
-        self.refresh_remotes() # Update UI state
-        
-        worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode)
-        worker.finished_success.connect(self._on_mount_success)
-        worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
-        
-        self._mount_workers[remote_name] = worker
-        worker.start()
+        try:
+            if remote_name in self._mounting_remotes: return
+            
+            self.logger.info(f"Mounting {remote_name}...")
+            self._mounting_remotes.add(remote_name)
+            self.refresh_remotes() # Update UI state
+            
+            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode)
+            worker.finished_success.connect(self._on_mount_success)
+            worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
+            
+            self._mount_workers[remote_name] = worker
+            worker.start()
+        except Exception as e:
+            self.logger.exception(f"Error initiating mount: {e}")
+            self._on_mount_error(remote_name, str(e))
 
     def _on_mount_success(self, result):
         remote_name = result.get("remote_name")

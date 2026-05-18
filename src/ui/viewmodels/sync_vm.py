@@ -99,9 +99,19 @@ class SyncViewModel(QObject):
         local = task["local_path"]
         remote = f"{task['remote_name']}:{task['remote_path']}"
         
-        # Safety Checks: Local Path
-        if not os.path.exists(local):
-            self._on_sync_error(task_id, f"SAFETY: Local path '{local}' is missing. Aborting.")
+        # Safety Checks: Local Path (With Retry for slow mounts)
+        import time
+        max_retries = 10
+        path_found = False
+        for i in range(max_retries):
+            if os.path.exists(local):
+                path_found = True
+                break
+            self.logger.info(f"Waiting for local path {local}... (attempt {i+1}/{max_retries})")
+            time.sleep(1.5) # Esperar a que FUSE asiente la carpeta
+
+        if not path_found:
+            self._on_sync_error(task_id, f"SAFETY: Local path '{local}' is missing after waiting. Aborting.")
             return
             
         # Empty check is crucial for bisync, maybe less for copy (downloading to empty is fine)
