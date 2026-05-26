@@ -2,10 +2,12 @@ from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal
 import logging
 from core.settings_manager import SettingsManager
 from core.rclone_client import RcloneClient
+from core.secret_manager import SecretManager
 
 class SettingsViewModel(QObject):
     settingsChanged = pyqtSignal()
-    
+    credentialStatusChanged = pyqtSignal()
+
     def __init__(self, settings_manager, rclone_client, autostart_manager):
         super().__init__()
         self._settings_manager = settings_manager
@@ -13,6 +15,38 @@ class SettingsViewModel(QObject):
         self._autostart_manager = autostart_manager
         self._remotes_cache = []
         self.logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Google Credential Management
+    # ------------------------------------------------------------------
+
+    @pyqtProperty(bool, notify=credentialStatusChanged)
+    def hasGoogleCredentials(self):
+        """True if Google OAuth credentials are stored in system keyring."""
+        return SecretManager.has_google_credentials()
+
+    @pyqtSlot(str, str)
+    def save_google_credentials(self, client_id, client_secret):
+        """Store Google Client ID/Secret to system keyring."""
+        if client_id and client_secret:
+            ok = SecretManager.save_google_credentials(client_id, client_secret)
+            if ok:
+                self.credentialStatusChanged.emit()
+                self.logger.info("Google credentials saved via Settings.")
+        else:
+            self.logger.warning("Both client_id and client_secret are required.")
+
+    @pyqtSlot()
+    def delete_google_credentials(self):
+        """Remove Google credentials from system keyring."""
+        ok = SecretManager.delete_google_credentials()
+        if ok:
+            self.credentialStatusChanged.emit()
+            self.logger.info("Google credentials deleted via Settings.")
+
+    # ------------------------------------------------------------------
+    # Autostart
+    # ------------------------------------------------------------------
 
     @pyqtProperty(bool, notify=settingsChanged)
     def run_on_startup(self):
@@ -27,16 +61,12 @@ class SettingsViewModel(QObject):
         self.settingsChanged.emit()
         self._remotes_cache = []
 
+    # ------------------------------------------------------------------
+    # Remotes
+    # ------------------------------------------------------------------
+
     @pyqtProperty(list, notify=settingsChanged)
     def remotes_settings_model(self):
-        """
-        Retorna la lista de remotos enriquecida con el estado de auto-mount.
-        Format: [{name, type, auto_mount: bool}, ...]
-        """
-        # Nota: Esto es síncrono y bloqueante si llamamos a Rclone aquí.
-        # Idealmente deberíamos cachear los remotos en MainVM y pasarlos, 
-        # o hacer esto async. Por simplicidad del MVP, usaremos una lista cacheada
-        # que se actualizará explícitamente.
         return self._remotes_cache
 
     @pyqtSlot()
@@ -55,7 +85,7 @@ class SettingsViewModel(QObject):
         try:
             response = await self._client.list_remotes()
             remotes = response.get("remotes", []) if response else []
-            
+
             enriched = []
             for r in remotes:
                 name = r.rstrip(':')
@@ -70,6 +100,10 @@ class SettingsViewModel(QObject):
         except Exception as e:
             self.logger.error(f"Error loading remotes for settings: {e}")
 
+    # ------------------------------------------------------------------
+    # Start minimized
+    # ------------------------------------------------------------------
+
     @pyqtProperty(bool, notify=settingsChanged)
     def start_minimized(self):
         return self._settings_manager.get_start_minimized()
@@ -79,11 +113,14 @@ class SettingsViewModel(QObject):
         self._settings_manager.set_start_minimized(enabled)
         self.settingsChanged.emit()
 
+    # ------------------------------------------------------------------
+    # Auto-mount toggle
+    # ------------------------------------------------------------------
+
     @pyqtSlot(str, bool)
     def toggle_auto_mount(self, remote_name, enabled):
         self.logger.info(f"Toggle auto-mount {remote_name}: {enabled}")
         self._settings_manager.set_auto_mount(remote_name, enabled)
-        # Actualizar modelo local
         for r in self._remotes_cache:
             if r["name"] == remote_name:
                 r["auto_mount"] = enabled

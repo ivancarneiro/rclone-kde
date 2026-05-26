@@ -10,6 +10,9 @@ Page {
         settingsViewModel.load_remotes()
     }
 
+    property string _editClientId: ""
+    property string _editClientSecret: ""
+
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
@@ -27,81 +30,225 @@ Page {
         }
     }
 
-    ColumnLayout {
+    ScrollView {
         anchors.fill: parent
-        anchors.margins: 20
-        spacing: 20
+        clip: true
 
-        Label {
-            text: "General"
-            font.bold: true
-            font.pixelSize: 16
-            color: "white"
-        }
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 20
 
-        CheckBox {
-            text: "Run Application on System Startup"
-            checked: settingsViewModel.run_on_startup
-            onToggled: settingsViewModel.set_run_on_startup(checked)
-        }
+            // ============================================================
+            // GENERAL
+            // ============================================================
+            Label {
+                text: "General"
+                font.bold: true
+                font.pixelSize: 16
+                color: "white"
+            }
 
-        CheckBox {
-            text: "Start Minimized to Tray"
-            checked: settingsViewModel.start_minimized
-            onToggled: settingsViewModel.set_start_minimized(checked)
-        }
+            CheckBox {
+                text: "Run Application on System Startup"
+                checked: settingsViewModel.run_on_startup
+                onToggled: settingsViewModel.set_run_on_startup(checked)
+            }
 
-        Rectangle { height: 1; width: parent.width; color: "#333" }
+            CheckBox {
+                text: "Start Minimized to Tray"
+                checked: settingsViewModel.start_minimized
+                onToggled: settingsViewModel.set_start_minimized(checked)
+            }
 
-        Label {
-            text: "Auto-Mount on Startup"
-            font.bold: true
-            font.pixelSize: 16
-            color: "white"
-        }
-        
-        Label {
-            text: "Select which drives to mount automatically when the application starts."
-            wrapMode: Text.Wrap
-            Layout.fillWidth: true
-            color: "#AAA"
-        }
+            Rectangle { height: 1; color: "#333"; Layout.fillWidth: true }
 
-        ListView {
-            id: remotesList
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            model: settingsViewModel.remotes_settings_model
+            // ============================================================
+            // GOOGLE CREDENTIALS
+            // ============================================================
+            Label {
+                text: "Google Credentials"
+                font.bold: true
+                font.pixelSize: 16
+                color: "white"
+            }
 
-            delegate: Item {
-                width: parent.width
-                height: 50
-                
+            Label {
+                text: "Your Google Cloud Client ID and Secret are stored in the system keyring (KDE Wallet / GNOME Keyring) for secure reuse when creating new Drive connections."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                color: "#AAA"
+                font.pixelSize: 12
+            }
+
+            // Status badge
+            Rectangle {
+                id: credStatusBadge
+                color: settingsViewModel.hasGoogleCredentials ? "#1B5E20" : "#3E2723"
+                radius: 6
+                height: 30
+                Layout.fillWidth: true
+
                 RowLayout {
                     anchors.fill: parent
-                    spacing: 10
-                    
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+
                     Label {
-                        text: modelData.name
-                        color: "white"
+                        text: settingsViewModel.hasGoogleCredentials ? "🔑" : "⚠️"
                         font.pixelSize: 14
+                    }
+                    Label {
+                        text: settingsViewModel.hasGoogleCredentials ? "Credentials saved in system keyring" : "No Google credentials stored"
+                        color: settingsViewModel.hasGoogleCredentials ? "#81C784" : "#EF9A9A"
+                        font.pixelSize: 12
                         Layout.fillWidth: true
                     }
-                    
-                    Switch {
-                        checked: modelData.auto_mount
-                        onToggled: {
-                            settingsViewModel.toggle_auto_mount(modelData.name, checked)
+                }
+            }
+
+            // Credential editor (collapsible)
+            Rectangle {
+                id: credEditor
+                color: "#1E1E1E"
+                radius: 6
+                Layout.fillWidth: true
+                height: credEditor.expanded ? 220 : 0
+                clip: true
+                property bool expanded: false
+
+                Behavior on height { NumberAnimation { duration: 200 } }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
+                    visible: credEditor.expanded
+
+                    Label {
+                        text: "Client ID"
+                        font.pixelSize: 12
+                        color: "#AAA"
+                    }
+                    TextField {
+                        id: editClientIdField
+                        placeholderText: "Paste your Google Client ID"
+                        Layout.fillWidth: true
+                    }
+
+                    Label {
+                        text: "Client Secret"
+                        font.pixelSize: 12
+                        color: "#AAA"
+                    }
+                    TextField {
+                        id: editClientSecretField
+                        placeholderText: "Paste your Google Client Secret"
+                        echoMode: TextInput.Password
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.alignment: Qt.AlignRight
+                        spacing: 8
+
+                        Button {
+                            text: "Cancel"
+                            onClicked: {
+                                editClientIdField.text = ""
+                                editClientSecretField.text = ""
+                                credEditor.expanded = false
+                            }
+                        }
+
+                        Button {
+                            text: "Save to Keyring"
+                            enabled: editClientIdField.text.length > 0 && editClientSecretField.text.length > 0
+                            onClicked: {
+                                settingsViewModel.save_google_credentials(
+                                    editClientIdField.text,
+                                    editClientSecretField.text
+                                )
+                                editClientIdField.text = ""
+                                editClientSecretField.text = ""
+                                credEditor.expanded = false
+                            }
                         }
                     }
                 }
-                
-                Rectangle {
-                    anchors.bottom: parent.bottom
+            }
+
+            // Action buttons
+            RowLayout {
+                spacing: 8
+
+                Button {
+                    text: settingsViewModel.hasGoogleCredentials ? "✏️ Update Credentials" : "📝 Add Credentials"
+                    onClicked: credEditor.expanded = !credEditor.expanded
+                }
+
+                Button {
+                    text: "🗑️ Remove from Keyring"
+                    enabled: settingsViewModel.hasGoogleCredentials
+                    onClicked: settingsViewModel.delete_google_credentials()
+                }
+            }
+
+            Rectangle { height: 1; color: "#333"; Layout.fillWidth: true }
+
+            // ============================================================
+            // AUTO-MOUNT
+            // ============================================================
+            Label {
+                text: "Auto-Mount on Startup"
+                font.bold: true
+                font.pixelSize: 16
+                color: "white"
+            }
+
+            Label {
+                text: "Select which drives to mount automatically when the application starts."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                color: "#AAA"
+            }
+
+            ListView {
+                id: remotesList
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: settingsViewModel.remotes_settings_model
+
+                delegate: Item {
                     width: parent.width
-                    height: 1
-                    color: "#333"
+                    height: 50
+
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 10
+
+                        Label {
+                            text: modelData.name
+                            color: "white"
+                            font.pixelSize: 14
+                            Layout.fillWidth: true
+                        }
+
+                        Switch {
+                            checked: modelData.auto_mount
+                            onToggled: {
+                                settingsViewModel.toggle_auto_mount(modelData.name, checked)
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: 1
+                        color: "#333"
+                    }
                 }
             }
         }
