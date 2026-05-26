@@ -12,7 +12,7 @@ from core.notifications import NotificationManager
 class SyncViewModel(QObject):
     tasksChanged = pyqtSignal()
     logReceived = pyqtSignal(int, str, arguments=['taskId', 'logLine']) # Signal for QML: taskId, line
-    
+
     def __init__(self, sync_manager: SyncManager, rclone_client: RcloneClient):
         super().__init__()
         self._manager = sync_manager
@@ -30,7 +30,7 @@ class SyncViewModel(QObject):
         """Slot interno para recibir logs del worker."""
         if task_id not in self._task_logs:
             self._task_logs[task_id] = []
-        
+
         # Guardar en memoria
         self._task_logs[task_id].append(line)
         # Emitir a QML
@@ -66,7 +66,7 @@ class SyncViewModel(QObject):
         # Allow retry if force_resync is True even if "active" (technically we should cleanup first)
         if task_id in self._active_workers and not force_resync:
             return
-            
+
         # Cleanup if we are forcing resync
         if force_resync and task_id in self._active_workers:
             self._cleanup_worker(task_id)
@@ -76,11 +76,11 @@ class SyncViewModel(QObject):
             return
 
         strategy = task.get("strategy", "bisync")
-        
+
         # Log start
         mode_str = "DRY-RUN" if dry_run else "LIVE"
         self.logger.info(f"Starting {strategy.upper()} ({mode_str}) for {task['name']}")
-        
+
         # Construir estado UI
         status_prefix = "Simulating: " if dry_run else ""
         if strategy == "bisync":
@@ -91,51 +91,52 @@ class SyncViewModel(QObject):
              action = "Downloading (Down)..."
         else:
              action = "Working..."
-             
+
         self._manager.update_task_status(task_id, f"{status_prefix}{action}")
         self.tasksChanged.emit()
-        
+
         # Construir rutas
         local = task["local_path"]
         remote = f"{task['remote_name']}:{task['remote_path']}"
-        
+
         # Safety Checks: Local Path
-        if strategy == "sync" and os.path.exists(local) and not os.listdir(local):
+        if not os.path.exists(local):
+            self._on_sync_error(task_id, f"SAFETY: Local path '{local}' is missing. Aborting.")
+            return
+
+        # Empty check is crucial for 'sync' (Backup): Empty local means DELETE REMOTE.
+        if strategy == "sync" and not os.listdir(local):
             self._on_sync_error(task_id, f"SAFETY: Local folder is empty. This would wipe the remote (Backup). Aborting.")
             return
 
         # Construir Comando Basico
         cmd = ["rclone"]
-        
+
         # Estrategias
         if strategy == "bisync":
             cmd.extend(["bisync", local, remote])
-            # Bisync specific flags
             if force_resync or (not task.get("last_sync") and not dry_run):
-                 # Solo añadir resync si NO es dry-run (o si el usuario fuerza), 
-                 # porque dry-run de resync primera vez puede fallar si no hay pathdb
                  cmd.append("--resync")
-            cmd.extend(["--max-delete", "5"]) # Safety belt
-            
+            cmd.extend(["--max-delete", "5"])
+
         elif strategy == "sync":
-            # Backup: Local -> Remote. Delete allowed (but limited)
             cmd.extend(["sync", local, remote])
             cmd.extend(["--max-delete", "5"])
-            
+
         elif strategy == "copy":
-             # Download: Remote -> Local. No deletes.
              cmd.extend(["copy", remote, local])
-             
+
         # Common flags
         cmd.extend([
-            "--verbose", 
+            "--verbose",
             "--config", Config.RCLONE_CONF,
+            "--drive-acknowledge-abuse",
             "--max-size", "1G"
         ])
-        
+
         if dry_run:
             cmd.append("--dry-run")
-        
+
         # Limpiar logs
         self._task_logs[task_id] = []
         if dry_run:
@@ -143,17 +144,17 @@ class SyncViewModel(QObject):
              self._task_logs[task_id].append(f"Strategy: {strategy}")
              self._task_logs[task_id].append("No changes will be applied to files.")
              self._task_logs[task_id].append("-" * 30)
-             
+
         if force_resync and not dry_run:
              self._task_logs[task_id].append("--- AUTO-RECOVERY: Resyncing... ---")
-        
+
         worker = SyncWorker(cmd)
-        
+
         # Conectar señales
         worker.finished_success.connect(lambda t_id=task_id: self._on_sync_success(t_id))
         worker.finished_error.connect(lambda msg, t_id=task_id: self._on_sync_error(t_id, msg))
         worker.output_log.connect(lambda line, t_id=task_id: self._on_sync_log(t_id, line))
-        
+
         self._active_workers[task_id] = worker
         worker.start()
 
@@ -161,18 +162,15 @@ class SyncViewModel(QObject):
         """Slot interno para recibir logs del worker."""
         if task_id not in self._task_logs:
             self._task_logs[task_id] = []
-        
+
         # Guardar en memoria
         self._task_logs[task_id].append(line)
         # Emitir a QML
         self.logReceived.emit(task_id, line)
 
-            # CRITICAL ERROR DETECTION & AUTO-RECOVERY
+        # CRITICAL ERROR DETECTION & AUTO-RECOVERY
         if "Must run --resync to recover" in line or "cannot find prior" in line:
             self.logger.warning(f"Task {task_id} corrupted. Triggering Auto-Resync...")
-            
-            # Implementation Strategy: 
-            # Mark task as 'needs_resync'
             if self._active_workers.get(task_id):
                  self._active_workers[task_id].needs_resync = True
 
@@ -199,29 +197,28 @@ class SyncViewModel(QObject):
         # Check if this error triggered a resync need
         worker = self._active_workers.get(task_id)
         should_resync = getattr(worker, 'needs_resync', False) if worker else False
-        
-        self._cleanup_worker(task_id) # Cleanup OLD worker first
-        
+
+        self._cleanup_worker(task_id)
+
         if should_resync:
             self.logger.warning(f"Auto-Recovering task {task_id} with --resync...")
-            # Schedule restart immediately (now that worker is gone)
             self.run_sync(task_id, force_resync=True)
             return
 
         self.logger.error(f"Sync error for task {task_id}: {error_msg}")
         self._manager.update_task_status(task_id, "Error")
         self.tasksChanged.emit()
-        
+
         # Notificar al usuario (Tray Notification)
         task = next((t for t in self._manager.get_tasks() if t["id"] == task_id), None)
         task_name = task['name'] if task else f"Task {task_id}"
-        
+
         NotificationManager.send(
-            "Sync Warning ⚠️", 
-            f"Conflicts/Errors in '{task_name}'. Check Logs.", 
+            "Sync Warning ⚠️",
+            f"Conflicts/Errors in '{task_name}'. Check Logs.",
             urgency="critical"
         )
-    
+
     def _cleanup_worker(self, task_id):
         if task_id in self._active_workers:
             w = self._active_workers.pop(task_id)

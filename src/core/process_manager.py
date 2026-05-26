@@ -15,6 +15,7 @@ class RcloneProcessManager:
         self.rc_pass = rc_pass
         self.rc_conf = rc_conf
         self.process = None
+        self.log_file = None
         self.logger = logging.getLogger(__name__)
 
     def is_installed(self):
@@ -23,11 +24,7 @@ class RcloneProcessManager:
     def _cleanup_port_hogs(self):
         """Mata procesos rclone antiguos que ocupen el puerto configurado."""
         try:
-            # Extraer puerto (asumiendo localhost:PORT)
-            port = self.rc_addr.split(":")[-1] 
-            # pkill -f "rc-addr=.*:PORT" es arriesgado si no es exacto
-            # Mejor usar fuser o lsof si existen, o pkill con patrón preciso.
-            # Usaremos pkill con el patrón completo de addr para ser precisos.
+            port = self.rc_addr.split(":")[-1]
             pattern = f"rc-addr={self.rc_addr}"
             self.logger.info(f"Cleaning up old processes on {self.rc_addr}...")
             subprocess.run(["pkill", "-f", pattern], check=False)
@@ -41,41 +38,37 @@ class RcloneProcessManager:
             self.logger.error("Rclone binary not found in PATH")
             return False
 
-        # Kill existing instances on this port
         self._cleanup_port_hogs()
 
-        # TODO: Verificar si el puerto ya está en uso
-        
-        # Prepare environment with password
-        # Prepare environment with password
         env = os.environ.copy()
         env["RCLONE_RC_PASS"] = self.rc_pass
 
         cmd = [
             "rclone", "rcd",
-            f"--rc-addr={self.rc_addr}",
-            f"--rc-user={self.rc_user}",
-            "--rc-no-auth" if not self.rc_pass else "", 
+            "--rc-addr", self.rc_addr,
+            "--rc-user", self.rc_user,
             "--config", self.rc_conf,
-            "-vv" # Verbose logging for diagnosis
+            "--drive-acknowledge-abuse",
+            "-vv",
         ]
-        
-        # Remove empty strings from cmd
-        cmd = [c for c in cmd if c]
 
-        self.logger.info(f"Starting Rclone Daemon on {self.rc_addr} with user {self.rc_user}")
-        
+        if not self.rc_pass:
+            cmd.append("--rc-no-auth")
+
+        self.logger.info(f"Starting Rclone Daemon on {self.rc_addr}")
+
         try:
-            # Abrir archivo de log para el daemon (modo overwrite para no crecer infinito)
-            log_file = open("rclone_daemon.log", "w")
+            log_path = os.path.expanduser("~/.cache/rclone-kde.log")
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            self.log_file = open(log_path, "a")
             self.process = subprocess.Popen(
-                cmd, 
-                stdout=log_file, 
-                stderr=log_file,
-                env=env # Pass secure env
+                cmd,
+                stdout=self.log_file,
+                stderr=subprocess.STDOUT,
+                env=env
             )
-            self.logger.info(f"Rclone daemon started (PID: {self.process.pid})")
-            time.sleep(3) # Dar tiempo extra para inicializar API y Config
+            self.logger.info(f"Rclone daemon started (PID: {self.process.pid}). Logs at {log_path}")
+            time.sleep(3)
             return True
         except Exception as e:
             self.logger.exception("Failed to start rclone daemon")
@@ -85,6 +78,9 @@ class RcloneProcessManager:
         """Detiene el proceso si fue iniciado por esta instancia."""
         if self.process:
             self.process.terminate()
-            self.process.wait()
+            self.process.wait(timeout=5)
             self.logger.info("Rclone daemon stopped")
             self.process = None
+        if self.log_file:
+            self.log_file.close()
+            self.log_file = None

@@ -14,6 +14,12 @@ Esta aplicación permite a los usuarios:
 
 ---
 
+
+---
+
+## 🛠️ Bug Fixes
+*   **Auto-limpieza de Montajes**: Detecta y elimina automáticamente "montajes zombie" (puntos de montaje rotos) al iniciar y cerrar la app.
+*   **Desmontaje Seguro**: Usa el modo "perezoso" (\`fusermount -uz\`) para evitar bloqueos del sistema al cerrar unidades.
 ## 🧠 Conceptos Clave: ¿Mount o Sync?
 
 La aplicación ofrece dos modos de uso. Elige el que mejor se adapte a tu necesidad:

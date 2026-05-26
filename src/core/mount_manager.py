@@ -50,6 +50,22 @@ class MountManager:
         except Exception as e:
             self.logger.warning(f"Cleanup zombie failed for {mount_point}: {e}")
 
+    def cleanup_all(self):
+        """Force unmounts everything in the Config.mount_dir"""
+        mount_dir = Config.mount_dir
+        if not os.path.exists(mount_dir):
+            return
+            
+        self.logger.info(f"Performing global mount cleanup in {mount_dir}...")
+        try:
+            for item in os.listdir(mount_dir):
+                path = os.path.join(mount_dir, item)
+                if os.path.isdir(path):
+                    self.logger.info(f"Cleaning up {path}...")
+                    subprocess.run(["fusermount", "-uz", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            self.logger.error(f"Global cleanup failed: {e}")
+
     async def mount_remote(self, remote_name, read_only=False, network_mode=False):
         """
         Mounts a remote using direct subprocess with exclusions for heavy files.
