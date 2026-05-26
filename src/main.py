@@ -76,6 +76,7 @@ def main():
     app.setApplicationName(Config.APP_NAME)
     app.setQuitOnLastWindowClosed(False) # Keep running when minimized
     
+
     icon_path = os.path.join(os.path.dirname(__file__), "ui/assets/rclone_logo.png")
     app_icon = QIcon(icon_path)
     app.setWindowIcon(app_icon)
