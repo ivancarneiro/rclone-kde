@@ -15,6 +15,7 @@ from core.autostart_manager import AutostartManager
 from core.config import Config
 from core.mount_manager import MountManager
 from ui.viewmodels.main_vm import MainViewModel
+from ui.viewmodels.wizard_vm import WizardViewModel
 from ui.viewmodels.sync_vm import SyncViewModel
 from ui.viewmodels.settings_vm import SettingsViewModel
 
@@ -81,12 +82,14 @@ def main():
 
     # ViewModels
     main_vm = MainViewModel(client, settings_manager, sync_manager)
+    wizard_vm = WizardViewModel(client, settings_manager, autostart_manager)
     sync_vm = SyncViewModel(sync_manager, client)
-    settings_vm = SettingsViewModel(settings_manager, autostart_manager, client)
+    settings_vm = SettingsViewModel(settings_manager, client, autostart_manager)
 
     # UI Engine
     engine.rootContext().setContextProperty("mainViewModel", main_vm)
     engine.rootContext().setContextProperty("main_vm", main_vm)
+    engine.rootContext().setContextProperty("wizardViewModel", wizard_vm)
     engine.rootContext().setContextProperty("syncViewModel", sync_vm)
     engine.rootContext().setContextProperty("sync_vm", sync_vm)
     engine.rootContext().setContextProperty("settingsViewModel", settings_vm)
