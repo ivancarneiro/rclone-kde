@@ -109,7 +109,6 @@ class WizardViewModel(QObject):
         # Save Auto-Mount pref
         if auto_mount:
             self._settings_manager.add_auto_mount(name)
-            # Ensure system autostart is enabled if we have at least one auto-mount
             if not self._autostart_manager.is_enabled():
                 self._autostart_manager.enable_autostart()
 
@@ -123,7 +122,6 @@ class WizardViewModel(QObject):
         self.logger.info(f"Starting auth flow for {name}")
 
         try:
-            # Construir comando
             cmd = ["rclone", "authorize", "drive"]
             if client_id:
                 cmd.append(client_id)
@@ -153,7 +151,6 @@ class WizardViewModel(QObject):
 
             self.setStatus("Authentication successful. Saving configuration...")
 
-            # Construir parámetros
             params = {
                 "name": name,
                 "type": "drive",
