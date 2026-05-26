@@ -67,7 +67,7 @@ def main():
     
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-
+    
     # ViewModels
     main_vm = MainViewModel(client, settings_manager, sync_manager)
     sync_vm = SyncViewModel(sync_manager, client)

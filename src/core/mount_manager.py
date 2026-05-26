@@ -67,10 +67,15 @@ class MountManager:
         os.makedirs(mount_point, exist_ok=True)
 
         # 3. Build Command
+        cache_dir = "/home/ciex/Rclone-GUI/data/cache"
+        os.makedirs(cache_dir, exist_ok=True)
+        
         cmd = [
             "rclone", "mount", f"{remote_name}:", mount_point,
             "--vfs-cache-mode", "full",
-            "--vfs-cache-max-age", "24h",
+            "--vfs-cache-max-age", "4h",
+            "--vfs-cache-max-size", "5G",
+            "--cache-dir", cache_dir,
             "--volname", remote_name,
             "--no-modtime",
             "--max-size", "1G",

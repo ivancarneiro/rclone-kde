@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 env/
 
+# Credenciales (NUNCA committear)
+client_secret_*.json
+
 # App Specific Data (Do NOT commit these)
 rclone-dev.conf
 settings.json
