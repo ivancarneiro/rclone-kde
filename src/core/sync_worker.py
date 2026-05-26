@@ -75,7 +75,3 @@ class SyncWorker(QThread):
         except Exception as e:
             self.logger.exception("Worker exception")
             self.finished_error.emit(str(e))
-            
-        except Exception as e:
-            self.logger.exception("Worker exception")
-            self.finished_error.emit(str(e))

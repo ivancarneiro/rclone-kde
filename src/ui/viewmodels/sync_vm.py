@@ -26,16 +26,6 @@ class SyncViewModel(QObject):
         """Devuelve todos los logs acumulados para una tarea como un solo string."""
         return "\n".join(self._task_logs.get(task_id, []))
 
-    def _on_sync_log(self, task_id, line):
-        """Slot interno para recibir logs del worker."""
-        if task_id not in self._task_logs:
-            self._task_logs[task_id] = []
-
-        # Guardar en memoria
-        self._task_logs[task_id].append(line)
-        # Emitir a QML
-        self.logReceived.emit(task_id, line)
-
     @pyqtProperty(list, notify=tasksChanged)
     def tasks_model(self):
         return self._manager.get_tasks()
