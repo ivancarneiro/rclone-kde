@@ -267,7 +267,7 @@ ApplicationWindow {
                                 text: modelData.is_mounted ? "Open" : "Mount"
                                 onClicked: {
                                     if (modelData.is_mounted) {
-                                        Qt.openUrlExternally("file://" + "/home/ciex/RcloneMounts/" + modelData.name)
+                                        Qt.openUrlExternally("file://" + mainViewModel.mount_dir + "/" + modelData.name)
                                     } else {
                                         // Default mount (RW)
                                         mainViewModel.mount_remote(modelData.name, false, false)

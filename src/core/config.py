@@ -61,7 +61,7 @@ class Config:
     # Production: Use system standard configuration
     # This allows the app to see existing user remotes.
     RCLONE_CONF = os.path.join(HOME_DIR, ".config", "rclone", "rclone.conf")
-    mount_dir = os.path.join(HOME_DIR, "RcloneMounts")
+    mount_dir = os.path.join(base_dir, "mounts")
 
     @staticmethod
     def get_rc_url():

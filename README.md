@@ -106,7 +106,7 @@ La aplicación iniciará el daemon de Rclone en segundo plano.
 ### 3. Montar y Usar
 *   En el Dashboard, haz clic en **"Mount"** en tu tarjeta de conexión.
 *   El estado cambiará a **Mounted** (Verde).
-*   Ahora puedes abrir tu gestor de archivos (Dolphin/Nautilus) en `~/RcloneMounts/NombreConexion` y usar tus archivos directamente.
+*   Ahora puedes abrir tu gestor de archivos (Dolphin/Nautilus) en `./mounts/NombreConexion` (directorio de montaje dentro del proyecto) y usar tus archivos directamente.
 
 ### 4. Sincronización Bireccional (Bisync)
 Ideal para mantener una carpeta local idéntica a una en la nube.
@@ -116,9 +116,10 @@ Ideal para mantener una carpeta local idéntica a una en la nube.
 4.  Clic en **"Sync Now"** para iniciar.
     *   **Logs en Tiempo Real**: Pulsa el botón **"Logs"** en la tarea### Estructura de Archivos recomendada:
 ```
-Rclone-GUI/
-├── rclone-kde/
-│   ├── settings.json         # Preferencias de la app
+rclone-kde/
+├── mounts/                   # Puntos de montaje (Google Drive, etc.)
+├── data/                     # Caché y datos de la app
+├── settings.json             # Preferencias de la app
 │   ├── sync_tasks.json       # Base de datos de tareas sync
 │   ├── src/
 │   │   ├── main.py           # Punto de entrada
@@ -141,7 +142,7 @@ Rclone-GUI/
 Hemos incluido un script de instalación simplificado:
 
 ```bash
-cd Rclone-GUI/rclone-kde
+cd rclone-kde
 chmod +x setup.sh
 ./setup.sh
 ```

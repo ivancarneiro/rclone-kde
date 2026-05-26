@@ -83,7 +83,7 @@ class MountManager:
         os.makedirs(mount_point, exist_ok=True)
 
         # 3. Build Command
-        cache_dir = "/home/ciex/Rclone-GUI/data/cache"
+        cache_dir = os.path.join(Config.base_dir, "data", "cache")
         os.makedirs(cache_dir, exist_ok=True)
         
         cmd = [

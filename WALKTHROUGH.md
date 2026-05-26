@@ -11,7 +11,7 @@ Build a modern, robust GUI for Rclone on Linux/KDE to simplify Google Drive mana
 *   **Integration**: Seamless OAuth2 flow launching system browser.
 
 ### 2. Smart Mounting
-*   **One-Click Mount**: Mount drives as local folders (`~/RcloneMounts/...`).
+*   **One-Click Mount**: Mount drives as local folders (`./mounts/...`).
 *   **Auto-Mount**: Configure drives to mount automatically on system startup.
 *   **System Tray**: App runs in background; starts minimized if configured.
 

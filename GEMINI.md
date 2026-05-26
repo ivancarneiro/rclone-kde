@@ -10,4 +10,4 @@
     - La limpieza de montajes zombie se realiza mediante `fusermount -uz` (lazy unmount).
 
 ## Workflow de Resiliencia
-- La aplicación DEBE limpiar el directorio de montajes (`~/RcloneMounts`) al iniciar y al cerrar para evitar errores de conexión (ENOTCONN).
+- La aplicación DEBE limpiar el directorio de montajes (`<base_dir>/mounts`) al iniciar y al cerrar para evitar errores de conexión (ENOTCONN).

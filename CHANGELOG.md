@@ -7,7 +7,7 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## [1.2.2] - 2026-05-04
 ### Fixed
 - **Mount Management**: Implementada limpieza robusta de "montajes zombie" (puntos de montaje FUSE rotos).
-- **Startup/Shutdown**: Se agregó un barrido automático de `~/RcloneMounts` al iniciar y cerrar la aplicación para prevenir errores de "Transport endpoint is not connected" (ENOTCONN).
+- **Startup/Shutdown**: Se agregó un barrido automático del directorio de montajes (`<base_dir>/mounts`) al iniciar y cerrar la aplicación para prevenir errores de "Transport endpoint is not connected" (ENOTCONN).
 
 ## [1.2.1] - 2026-01-14
 ### Fixed

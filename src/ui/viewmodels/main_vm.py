@@ -53,6 +53,10 @@ class MainViewModel(QObject):
             self._window.close()
         QApplication.quit()
 
+    @pyqtProperty(str, constant=True)
+    def mount_dir(self):
+        return Config.mount_dir
+
     @pyqtSlot()
     def hide_window(self):
         if self._window: self._window.hide()
