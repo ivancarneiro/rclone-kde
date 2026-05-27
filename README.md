@@ -2,166 +2,237 @@
 
 [![Recorrido Completo (Walkthrough)](https://img.shields.io/badge/📖-Ver_Recorrido/Manual_de_Uso-blue)](WALKTHROUGH.md)
 
+---
+
 ## 📋 Resumen y Propósito
-**Rclone Manager** es una interfaz gráfica moderna (GUI) desarrollada para Linux (específicamente entornos KDE Plasma, aunque compatible con otros) que facilita la gestión de **Rclone**, la potente herramienta de línea de comandos para gestionar almacenamiento en la nube.
 
-Esta aplicación permite a los usuarios:
-*   Conectar cuentas de Google Drive de forma sencilla (Wizard).
-*   **Montar** unidades en la nube como si fueran discos locales.
-*   **Sincronizar** carpetas bidireccionalmente (Modo Espejo/Bisync) con soporte en segundo plano.
-*   Gestionar el **arranque automático** de unidades al iniciar el sistema.
-*   Integración nativa con la **Bandeja del Sistema (System Tray)**.
+**Rclone Manager** es una interfaz gráfica moderna para Linux que simplifica la gestión de **Rclone** — la potente herramienta de almacenamiento en nube por línea de comandos. Diseñada con **seguridad por defecto** y una **experiencia de usuario fluida**, la app permite gestionar Google Drive sin tocar la terminal.
 
----
-
+| Característica | Valor |
+|---|---|
+| 🛡️ **Seguridad** | Credenciales en Keyring del sistema, auto-limpieza de montajes, límite seguro de borrados |
+| 🎯 **Usabilidad** | Reconexión con 1 clic, UI responsive, montaje/sync sin fricción |
+| 🪟 **Montaje virtual** | Drive como carpeta local — archivos no ocupan disco |
+| 🔄 **Sync bidireccional** | Espejo local ↔ nube con logs en vivo |
 
 ---
 
-## 🛠️ Bug Fixes
-*   **Auto-limpieza de Montajes**: Detecta y elimina automáticamente "montajes zombie" (puntos de montaje rotos) al iniciar y cerrar la app.
-*   **Desmontaje Seguro**: Usa el modo "perezoso" (\`fusermount -uz\`) para evitar bloqueos del sistema al cerrar unidades.
-## 🧠 Conceptos Clave: ¿Mount o Sync?
+## 🔐 Seguridad: Diseñada para Producción
 
-La aplicación ofrece dos modos de uso. Elige el que mejor se adapte a tu necesidad:
+### 1. Credenciales en Keyring del Sistema (KDE Wallet / GNOME Keyring)
 
-### 🪟 Mount (Montaje)
-*   **¿Qué es?** Crea una carpeta virtual en tu PC que "mira" a la nube.
-*   **Comportamiento:** Los archivos **no ocupan espacio** en tu disco. Solo se descargan parcialmente cuando los abres.
-*   **Ideal para:** Trabajar con muchos archivos sin llenar tu disco duro.
-*   **👉 Cómo usarlo:** En el **Dashboard** principal, haz clic en el botón **"Mount"** de tu tarjeta de conexión.
+La app **nunca almacena credenciales en texto plano**. Todo pasa por el keyring del sistema:
 
-### 🪞 Sync (Bisync/Espejo)
-*   **¿Qué es?** Crea una **copia física idéntica** en tu disco duro.
-*   **Comportamiento:** Descarga **todo** el contenido. Mantiene ambos lados sincronizados bidireccionalmente.
-*   **Ideal para:** Copias de seguridad (Backup) y trabajo Offline.
-*   **👉 Cómo usarlo:** Abre el menú lateral **(☰)**, ve a **"Sync Tasks"** y crea una nueva tarea seleccionando tu carpeta local y la remota.
+| ¿Qué se guarda? | Dónde | Por qué es seguro |
+|---|---|---|
+| **Google OAuth: Client ID + Secret** | Keyring (`RcloneKDE`) | Cifrado por el sistema operativo, solo tu usuario puede acceder |
+| **Contraseña RC API** | Keyring (`RcloneKDE`) | Token aleatorio de 16 bytes (`secrets.token_hex(16)`) para autenticar la comunicación interna entre la GUI y el motor Rclone |
+| **Token de acceso a Drive** | `~/.config/rclone/rclone.conf` | Archivo con permisos restringidos a tu usuario, compatible con `rclone` CLI |
+
+**Flujo de seguridad al crear una conexión:**
+1. Ingresás Client ID y Client Secret en el Wizard
+2. Se abré el navegador oficial de Google para autorizar
+3. Al éxito, las credenciales se guardan automáticamente en el Keyring
+4. En usos futuros, el Wizard las precarga desde el Keyring — no necesitas volver a pegarlas
+
+### 2. Gestión Completa del Ciclo de Vida de Credenciales
+
+Desde **Settings** podés:
+
+| Acción | Cómo |
+|---|---|
+| **Agregar** | Botón "Add Credentials" → se guardan en Keyring |
+| **Actualizar** | Botón "Update Credentials" con auto-push a todos los remotos existentes |
+| **Eliminar** | Botón "Remove from Keyring" |
+| **Ver estado** | Badge verde "🔑 Credentials saved" o ámbar "⚠️ No credentials" |
+
+### 3. Auto-Push de Credenciales a Remotos Existentes
+
+Al guardar nuevas credenciales en Settings, la app **las propaga automáticamente** a todas las conexiones de Google Drive configuradas. No necesitas actualizar cada remote manualmente.
+
+### 4. Reconexión Segura (Reconnect Drive)
+
+Si tus claves OAuth expiran o regenerás tus credenciales en Google Cloud Console:
+
+1. Actualizás Client ID/Secret en **Settings**
+2. Hacés clic en **"🔄 Reconnect"** (desde el Dashboard o Settings)
+3. La app: actualiza las credenciales → abre el navegador para reautorizar → guarda el nuevo token
+
+**Sin perder la configuración** del remote (nombre, auto-mount, sync tasks).
+
+### 5. Seguridad en Montajes
+
+| Protección | Descripción |
+|---|---|
+| **Límite de tamaño** | `--max-size 1G` evita montar archivos enormes que degradarían el rendimiento |
+| **Modo Read-Only** | Opción "Safe Mode" al montar — imposible borrar o modificar archivos |
+| **Anti-Zombie** | Al iniciar y cerrar, la app barre y limpia montajes rotos (`fusermount -uz`) |
+| **Desmontaje lazy** | Usa `fusermount -uz` para evitar que el sistema se cuelgue al cerrar |
+
+### 6. Seguridad en Sincronización
+
+| Protección | Descripción |
+|---|---|
+| **Límite de borrados** | `--max-delete 5` evita la pérdida masiva de archivos por error de configuración |
+| **Dry-run (Simular)** | Botón "👁️" para previsualizar qué cambios haría el sync sin ejecutarlos |
+| **Worker thread** | La sincronización corre en un `QThread` separado — la UI nunca se congela |
+
+---
+
+## 🎯 Usabilidad: Hecha para el Usuario Final
+
+### 1. Dashboard en Tiempo Real
+
+Cada remote se muestra como una tarjeta con:
+
+| Indicador | Qué muestra |
+|---|---|
+| 🟢🟡🔴 **Status dot** | Montado / Conectado / Error |
+| **Barra de almacenamiento** | Uso de Google Drive con alerta visual (>90% en rojo) |
+| **Strategy chip** | `BISYNC`, `SYNC`, `COPY` — de un vistazo |
+| **Botón contextual** | "Mount" / "Open" / "Unmount" según estado |
+| **🔄 Reconnect** | Solo visible si hay credenciales guardadas y el remote no está montado |
+
+### 2. Reconexión con 1 Clic
+
+Botón **"🔄"** en cada remote del Dashboard (y en Settings):
+- Detecta automáticamente si hay credenciales en el Keyring
+- Muestra feedback visual del progreso: "Reconnecting... → ✅ Reconnected!"
+- Tiempo de espera generoso (120s) para la autorización en el navegador
+
+### 3. UI Totalmente Responsive
+
+| Aspecto | Detalle |
+|---|---|
+| **Tamaño mínimo** | 700×500 píxeles — todos los componentes visibles |
+| **ScrollView inteligente** | El contenido de Settings hace scroll cuando se expande el editor de credenciales |
+| **Diálogos adaptables** | Se redimensionan según el tamaño de la ventana (`Math.min(fixed, parent.width * 0.9)`) |
+| **Títulos dinámicos** | La ventana del sistema muestra la vista actual: "Global Settings - Rclone Manager" |
+
+### 4. Gestión de Conexiones
+
+- **Add New Drive**: Wizard paso a paso con precarga de credenciales desde Keyring
+- **Mount options**: Modo lectura, modo stream, todo desde un diálogo
+- **Auto-Mount**: Elegí qué drives se montan automáticamente al iniciar sesión
+- **Delete**: Confirmación antes de borrar (MessageDialog)
+
+### 5. Sync Bidireccional (Bisync)
+
+| Feature | Descripción |
+|---|---|
+| **Live Logs** | Vista "Matrix" en tiempo real del progreso de sync |
+| **Múltiples estrategias** | Bisync (espejo), Sync (backup local→nube), Copy (descarga nube→local) |
+| **Help contextual** | Popup "Cómo usar" con instrucciones claras |
+| **Selector de carpeta local** | Botón "..." para elegir con diálogo nativo |
+
+### 6. Unificación de Directorios
+
+Todo el proyecto vive dentro de un único directorio:
+
+```
+rclone-kde/
+├── mounts/        # Puntos de montaje (ivanexequielc/, etc.)
+├── data/          # Caché VFS y datos de la app
+│   └── cache/
+├── src/           # Código fuente (Python + QML)
+└── sync_tasks.json
+```
+
+**Portabilidad**: Clonás el repo en otro dispositivo, ejecutás `setup.sh`, y todo funciona — las rutas son relativas al proyecto.
+
+### 7. Integración con el Sistema
+
+- **System Tray**: Minimiza al cerrar, arranque silencioso
+- **Auto-start**: Acceso directo en `~/.config/autostart/` (gestión desde Settings)
+- **Notificaciones del sistema**: Alertas de montaje, errores y conflictos vía `notify-send`
+- **Apertura en gestor de archivos**: Botón "Open" → Dolphin/Nautilus en el punto de montaje
 
 ---
 
 ## 💻 Requisitos del Sistema
-*   **Sistema Operativo**: Linux (Probado en KDE Neon / Ubuntu / Fedora).
-*   **Dependencia Externa**: `rclone` debe estar instalado en el sistema (`sudo apt install rclone` o via script oficial).
-*   **Python**: Versión 3.9 o superior.
-*   **Librerías Gráficas**: Qt6 (vía PyQt6).
+
+| Requisito | Detalle |
+|---|---|
+| **Sistema** | Linux (KDE Neon, Ubuntu, Fedora, etc.) |
+| **Dependencia externa** | `rclone` instalado (`sudo apt install rclone` o script oficial) |
+| **Python** | 3.9+ |
+| **Gráficos** | Qt6 (vía PyQt6) |
+| **Keyring** | KDE Wallet, GNOME Keyring o cualquier backend `secret-service` |
 
 ---
 
-## 🛠️ Tecnologías Usadas
-
-### Stack Principal
-*   **Lenguaje**: Python 3.
-*   **Frontend**: Qt Quick (QML) + Kirigami (Estilo KDE).
-*   **Backend Binding**: PyQt6.
-*   **Motor de Nube**: Rclone (ejecutándose en modo `rcd` daemon).
-
-### Librerías Clave (Python)
-*   `PyQt6`: Enlace entre Python y el framework Qt6.
-*   `aiohttp`: Para la comunicación asíncrona HTTP con la API de Rclone (`rclone rc`).
-*   `subprocess`, `threading`: Manejo de procesos en segundo plano (workers de sincronización).
-
----
-
-## 🏗️ Arquitectura y Funciones
-
-La aplicación sigue el patrón de diseño **MVVM (Model-View-ViewModel)** para separar la lógica de negocio de la interfaz gráfica.
-
-### 1. `src/core/` (Lógica de Negocio)
-*   **`rclone_client.py`**: Cliente HTTP asíncrono para comunicarse con el daemon de Rclone (`http://localhost:5572`). Maneja comandos como `mount`, `listremotes`, `config/dump`.
-*   **`process_manager.py`**: Se encarga de iniciar y detener el proceso `rclone rcd` automáticamente al abrir/cerrar la app.
-*   **`sync_manager.py`**: Gestiona la base de datos (JSON) de tareas de sincronización (carpetas locales ↔ remotas).
-*   **`settings_manager.py`**: Controla las preferencias globales (`settings.json`) como el auto-montaje y el inicio minimizado.
-*   **`autostart_manager.py`**: Crea y elimina archivos `.desktop` en `~/.config/autostart/` para la integración con el inicio de sesión de Linux.
-
-### 2. `src/ui/viewmodels/` (ViewModels)
-*   **`main_vm.py`**: Cerebro de la pantalla principal. Lista conexiones, gestiona el montaje/desmontaje y coordina el System Tray.
-*   **`wizard_vm.py`**: Lógica del asistente de "Nueva Conexión". Maneja el flujo de OAuth2 con Google Drive.
-*   **`sync_vm.py`**: Controla la vista de Sincronización. Lanza hilos (`QThread`) para ejecutar `rclone bisync` sin congelar la interfaz.
-*   **`settings_vm.py`**: Intermediario para el panel de configuración global.
-
-### 3. `src/ui/qml/` (Interfaz de Usuario)
-*   **`Main.qml`**: Ventana principal con navegación lateral (Drawer) y Dashboard.
-*   **`SyncView.qml`**: Panel de gestión de tareas de sincronización. Incluye tutoriales e indicadores de estado.
-*   **`SettingsView.qml`**: Pantalla de configuración global.
-*   **`Dialogs/NewDriveWizard.qml`**: Asistente paso a paso para crear conexiones.
-
----
-
-## 📖 Manual de Uso
-
-### 1. Iniciar la Aplicación
-Ejecuta el script principal:
-```bash
-python3 src/main.py
-```
-La aplicación iniciará el daemon de Rclone en segundo plano.
-
-### 2. Crear una Conexión (Google Drive)
-1.  En el Dashboard, haz clic en **"Add New Drive"**.
-2.  Ingresa un nombre para la conexión (ej. "MiGoogleDrive").
-3.  Clic en "Next".
-4.  Marca "Mount automatically" si deseas que se monte al iniciar el PC.
-5.  Clic en **"Connect & Authorize"**. Se abrirá tu navegador para iniciar sesión en Google.
-6.  Al finalizar, verás la nueva conexión en el Dashboard.
-
-### 3. Montar y Usar
-*   En el Dashboard, haz clic en **"Mount"** en tu tarjeta de conexión.
-*   El estado cambiará a **Mounted** (Verde).
-*   Ahora puedes abrir tu gestor de archivos (Dolphin/Nautilus) en `./mounts/NombreConexion` (directorio de montaje dentro del proyecto) y usar tus archivos directamente.
-
-### 4. Sincronización Bireccional (Bisync)
-Ideal para mantener una carpeta local idéntica a una en la nube.
-1.  Ve al menú lateral **(☰) -> Sync Tasks**.
-2.  Clic en **"New Task"**.
-3.  Selecciona tu carpeta Local y la ruta Remota.
-4.  Clic en **"Sync Now"** para iniciar.
-    *   **Logs en Tiempo Real**: Pulsa el botón **"Logs"** en la tarea### Estructura de Archivos recomendada:
-```
-rclone-kde/
-├── mounts/                   # Puntos de montaje (Google Drive, etc.)
-├── data/                     # Caché y datos de la app
-├── settings.json             # Preferencias de la app
-│   ├── sync_tasks.json       # Base de datos de tareas sync
-│   ├── src/
-│   │   ├── main.py           # Punto de entrada
-│   │   ├── core/             # Backend
-│   │   ├── ui/               # Frontend (QML + ViewModels)
-│   │   └── assets/           # Imágenes e iconos
-```
-
-**Nota Importante**: La aplicación utiliza ahora la configuración estándar de Rclone (`~/.config/rclone/rclone.conf`). Esto significa que **detectará automáticamente** cualquier control remoto que ya tengas configurado en tu sistema.
-### 5. Configuración y System Tray
-*   **Minimizar**: Al cerrar la ventana, la app se minimiza al área de notificaciones (reloj).
-*   **Configuración**: Ve a **(☰) -> Settings**.
-    *   Activa **"Start Minimized to Tray"** para un arranque silencioso.
-    *   Gestiona qué unidades se montan solas con los interruptores de **"Auto-Mount"**.
-
----
-
-## 👨‍💻 Instalación Fácil (Para Usuarios)
-
-Hemos incluido un script de instalación simplificado:
+## 🛠️ Instalación
 
 ```bash
+git clone <repo-url> rclone-kde
 cd rclone-kde
 chmod +x setup.sh
 ./setup.sh
 ```
 
-Esto:
-1.  Creará el entorno virtual.
-2.  Instalará todas las dependencias (incluyendo `keyring` para máxima seguridad).
-3.  Creará un acceso directo en tu menú de aplicaciones ("Rclone Manager").
+Esto crea el entorno virtual, instala dependencias y agrega un acceso directo al menú de aplicaciones.
 
-## 🔐 Seguridad y Arquitectura de Credenciales
+---
 
-Esta aplicación utiliza un **modelo de seguridad híbrido** para garantizar tanto la protección del sistema como la compatibilidad con el ecosistema Rclone:
+## 🧠 Conceptos Clave: ¿Mount o Sync?
 
-1.  **Protección de la App (Keyring)**:
-    *   La comunicación interna entre la interfaz gráfica (GUI) y el motor Rclone (RC API) está blindada.
-    *   Utilizamos el **Keyring del Sistema** (GNOME Keyring / KWallet) para generar y almacenar una contraseña aleatoria única para esta sesión de control. Esto impide que otro software en tu PC pueda "secuestrar" el control de Rclone.
+### 🪟 Mount (Montaje Virtual)
+Crea una carpeta local que "mira" a la nube. Los archivos **no ocupan espacio** en tu disco.
+- ✅ Ideal para trabajar con muchos archivos sin llenar el disco
+- ✅ Abrí archivos directamente desde Dolphin
+- 🔒 Opción Read-Only para navegación segura
 
-2.  **Credenciales de Nube (Standard)**:
-    *   Tus tokens de acceso (Google Drive, Client ID, Secret) se almacenan en el archivo de configuración estándar de Rclone (`~/.config/rclone/rclone.conf`).
-    *   **¿Por qué?**: Esto asegura que puedas seguir utilizando `rclone` desde la terminal sin perder acceso a tus cuentas.
-    *   La seguridad de estos tokens depende de los permisos del archivo (que Rclone restringe a solo tu usuario) o del cifrado nativo de Rclone si decides activarlo.
+### 🪞 Sync (Espejo Bidireccional / Bisync)
+Crea una **copia física idéntica** en tu disco local. Mantiene ambos lados sincronizados.
+- ✅ Ideal para backups y trabajo offline
+- ✅ Tres estrategias: espejo, backup (local→nube), descarga (nube→local)
+- ✅ Simulación (dry-run) antes de ejecutar
 
+---
+
+## 🏗️ Arquitectura (MVVM)
+
+```
+src/
+├── main.py                # Punto de entrada + contexto QML
+├── core/
+│   ├── config.py          # Configuración + keyring RC pass
+│   ├── rclone_client.py   # Cliente HTTP API de Rclone
+│   ├── mount_manager.py   # Montaje/desmontaje + anti-zombie
+│   ├── sync_manager.py    # Persistencia de tareas sync
+│   ├── sync_worker.py     # QThread para sync sin congelar UI
+│   ├── secret_manager.py  # CRUD de credenciales en Keyring
+│   ├── notifications.py   # Notificaciones del sistema
+│   ├── settings_manager.py
+│   └── autostart_manager.py
+└── ui/
+    ├── viewmodels/        # Lógica de cada pantalla
+    │   ├── main_vm.py     # Dashboard + reconnect
+    │   ├── settings_vm.py # Settings + auto-push credentials
+    │   ├── wizard_vm.py   # Asistente + keyring integration
+    │   ├── sync_vm.py     # Sync tasks
+    │   └── activity_vm.py # Monitor de actividad
+    └── qml/               # Interfaz Qt Quick
+        ├── Main.qml       # Ventana principal + Dashboard
+        ├── SettingsView.qml
+        ├── SyncView.qml
+        ├── ActivityView.qml
+        ├── MountOptionsDialog.qml
+        └── Dialogs/
+            └── NewDriveWizard.qml
+```
+
+---
+
+## 🚀 Cómo Usar
+
+```bash
+# Desde el acceso directo del menú:
+# "Rclone Manager"
+
+# O vía terminal:
+cd rclone-kde
+./start.sh
+```
+
+Ver [**Manual de Usuario (WALKTHROUGH.md)**](WALKTHROUGH.md) para una guía completa paso a paso.
