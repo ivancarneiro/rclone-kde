@@ -26,23 +26,8 @@ ApplicationWindow {
         mainViewModel.refresh_remotes()
     }
 
-    header: ToolBar {
-        RowLayout {
-            anchors.fill: parent
-            ToolButton {
-                text: "☰"
-                onClicked: drawer.open()
-            }
-            Label {
-                text: stackView.currentItem ? stackView.currentItem.title : "Rclone Manager"
-                elide: Label.ElideRight
-                horizontalAlignment: Qt.AlignHCenter
-                verticalAlignment: Qt.AlignVCenter
-                Layout.fillWidth: true
-            }
-
-        }
-    }
+    // NOTE: No global header here — each Page defines its own header
+    // (prevents duplicate toolbars when sub-pages with headers are pushed)
 
     Drawer {
         id: drawer
@@ -139,6 +124,23 @@ ApplicationWindow {
         id: dashboardPage
         Page {
             title: "Remotes Dashboard"
+
+            header: ToolBar {
+                RowLayout {
+                    anchors.fill: parent
+                    ToolButton {
+                        text: "☰"
+                        onClicked: drawer.open()
+                    }
+                    Label {
+                        text: "Remotes Dashboard"
+                        elide: Label.ElideRight
+                        horizontalAlignment: Qt.AlignHCenter
+                        verticalAlignment: Qt.AlignVCenter
+                        Layout.fillWidth: true
+                    }
+                }
+            }
             
             // Add Button (Floating-like logic via Toolbar)
             footer: ToolBar {

@@ -171,6 +171,8 @@ Page {
                             text: "Save to Keyring"
                             enabled: editClientIdField.text.length > 0 && editClientSecretField.text.length > 0
                             onClicked: {
+                                // Raise main window so KDE Wallet dialog appears in front
+                                mainViewModel.show_window()
                                 settingsViewModel.save_google_credentials(
                                     editClientIdField.text,
                                     editClientSecretField.text
@@ -196,7 +198,10 @@ Page {
                 Button {
                     text: "🗑️ Remove from Keyring"
                     enabled: settingsViewModel.hasGoogleCredentials
-                    onClicked: settingsViewModel.delete_google_credentials()
+                    onClicked: {
+                        mainViewModel.show_window()
+                        settingsViewModel.delete_google_credentials()
+                    }
                 }
             }
 

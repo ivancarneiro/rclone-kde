@@ -18,6 +18,23 @@ Page {
         }
     }
 
+    header: ToolBar {
+        RowLayout {
+            anchors.fill: parent
+            ToolButton {
+                text: "Back"
+                onClicked: stackView.pop()
+            }
+            Label {
+                text: root.title
+                elide: Text.ElideRight
+                horizontalAlignment: Qt.AlignHCenter
+                verticalAlignment: Qt.AlignVCenter
+                Layout.fillWidth: true
+            }
+        }
+    }
+
     Component.onCompleted: {
         // Pre-fill if credentials already loaded
         if (wizardViewModel.hasStoredCredentials) {
