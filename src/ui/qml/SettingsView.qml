@@ -14,6 +14,8 @@ Page {
     property string _editClientSecret: ""
     // Map of remote_name -> reconnect status message
     property var _reconnectStatuses: ({})
+    property bool _keyringBusy: false
+    property string _keyringStatusText: ""
 
     header: ToolBar {
         RowLayout {
@@ -156,32 +158,34 @@ Page {
 
                     RowLayout {
                         Layout.alignment: Qt.AlignRight
-                        spacing: 8
-
-                        Button {
-                            text: "Cancel"
-                            onClicked: {
-                                editClientIdField.text = ""
-                                editClientSecretField.text = ""
-                                credEditor.expanded = false
+                        spacing: 8                            Button {
+                                text: "Cancel"
+                                onClicked: {
+                                    editClientIdField.text = ""
+                                    editClientSecretField.text = ""
+                                    credEditor.expanded = false
+                                }
                             }
-                        }
 
-                        Button {
-                            text: "Save to Keyring"
-                            enabled: editClientIdField.text.length > 0 && editClientSecretField.text.length > 0
-                            onClicked: {
-                                // Raise main window so KDE Wallet dialog appears in front
-                                mainViewModel.show_window()
-                                settingsViewModel.save_google_credentials(
-                                    editClientIdField.text,
-                                    editClientSecretField.text
-                                )
-                                editClientIdField.text = ""
-                                editClientSecretField.text = ""
-                                credEditor.expanded = false
+                            Button {
+                                text: "Save to Keyring"
+                                enabled: editClientIdField.text.length > 0 && editClientSecretField.text.length > 0 && !root._keyringBusy
+                                onClicked: {
+                                    // 1. Raise and flash the main window so KDE Wallet dialog appears in front
+                                    mainViewModel.show_window()
+                                    mainViewModel.alert_window()
+                                    // 2. Trigger keyring save in background thread (UI stays responsive)
+                                    root._keyringBusy = true
+                                    root._keyringStatusText = "Saving credentials to system keyring... Please check for a KDE Wallet prompt in your taskbar."
+                                    settingsViewModel.save_google_credentials(
+                                        editClientIdField.text,
+                                        editClientSecretField.text
+                                    )
+                                    editClientIdField.text = ""
+                                    editClientSecretField.text = ""
+                                    credEditor.expanded = false
+                                }
                             }
-                        }
                     }
                 }
             }
@@ -197,9 +201,12 @@ Page {
 
                 Button {
                     text: "🗑️ Remove from Keyring"
-                    enabled: settingsViewModel.hasGoogleCredentials
+                    enabled: settingsViewModel.hasGoogleCredentials && !root._keyringBusy
                     onClicked: {
+                        root._keyringBusy = true
+                        root._keyringStatusText = "Removing credentials from keyring... Please check for a KDE Wallet prompt in your taskbar."
                         mainViewModel.show_window()
+                        mainViewModel.alert_window()
                         settingsViewModel.delete_google_credentials()
                     }
                 }
@@ -347,9 +354,53 @@ Page {
         }
     }
 
-    // Connections for reconnect state updates
+    // Keyring busy status banner
+    Rectangle {
+        id: keyringBanner
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: root._keyringBusy ? 40 : 0
+        color: "#1A237E"
+        visible: root._keyringBusy
+        z: 10
+
+        Behavior on height { NumberAnimation { duration: 200 } }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            spacing: 8
+
+            BusyIndicator {
+                id: busySpinner
+                running: root._keyringBusy
+                width: 20
+                height: 20
+            }
+
+            Label {
+                text: root._keyringStatusText
+                color: "white"
+                font.pixelSize: 12
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+
+    // Connections for keyring status and reconnect state updates
     Connections {
         target: settingsViewModel
+        function onKeyringBusyChanged(busy) {
+            root._keyringBusy = busy
+            if (!busy) {
+                root._keyringStatusText = ""
+            }
+        }
+
         function onReconnectStateChanged(remoteName, state) {
             if (state === "success") {
                 root._reconnectStatuses[remoteName] = "✅ Done!"

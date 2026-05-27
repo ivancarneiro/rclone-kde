@@ -1,12 +1,47 @@
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QThread
 import logging
 from core.settings_manager import SettingsManager
 from core.rclone_client import RcloneClient
 from core.secret_manager import SecretManager
 
+
+class _KeyringWorker(QObject):
+    """
+    Runs blocking keyring operations in a background thread
+    so the Qt event loop stays responsive (critical for Wayland compatibility).
+    The KDE Wallet dialog (shown by kwalletd via DBUS) will appear alongside
+    our responsive application window instead of behind a frozen UI.
+    """
+
+    finished = pyqtSignal(bool)
+    error = pyqtSignal(str)
+
+    def __init__(self, action, client_id=None, client_secret=None):
+        super().__init__()
+        self._action = action
+        self._client_id = client_id
+        self._client_secret = client_secret
+
+    @pyqtSlot()
+    def run(self):
+        """Execute the keyring operation (runs in background thread)."""
+        try:
+            if self._action == "save":
+                ok = SecretManager.save_google_credentials(self._client_id, self._client_secret)
+            elif self._action == "delete":
+                ok = SecretManager.delete_google_credentials()
+            else:
+                ok = False
+            self.finished.emit(ok)
+        except Exception as e:
+            self.error.emit(str(e))
+            self.finished.emit(False)
+
+
 class SettingsViewModel(QObject):
     settingsChanged = pyqtSignal()
     credentialStatusChanged = pyqtSignal()
+    keyringBusyChanged = pyqtSignal(bool)
 
     def __init__(self, settings_manager, rclone_client, autostart_manager):
         super().__init__()
@@ -14,7 +49,73 @@ class SettingsViewModel(QObject):
         self._client = rclone_client
         self._autostart_manager = autostart_manager
         self._remotes_cache = []
+        self._keyring_busy = False
+        self._keyring_thread = None
+        self._keyring_worker = None
+        self._pending_auto_push = None
         self.logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Keyring threading helpers
+    # ------------------------------------------------------------------
+
+    @pyqtProperty(bool, notify=keyringBusyChanged)
+    def keyring_busy(self):
+        return self._keyring_busy
+
+    def _run_keyring_thread(self, action, client_id=None, client_secret=None):
+        """
+        Start a background thread for a blocking keyring operation.
+        The Qt event loop remains responsive so window alert/raise events
+        are processed, and the KDE Wallet dialog appears in front.
+        """
+        if self._keyring_busy:
+            self.logger.warning("Keyring operation already in progress, ignoring.")
+            return
+
+        self._keyring_busy = True
+        self.keyringBusyChanged.emit(True)
+
+        self._keyring_thread = QThread()
+        self._keyring_worker = _KeyringWorker(action, client_id, client_secret)
+        self._keyring_worker.moveToThread(self._keyring_thread)
+
+        self._keyring_thread.started.connect(self._keyring_worker.run)
+        self._keyring_worker.finished.connect(self._on_keyring_finished)
+        self._keyring_worker.error.connect(self._on_keyring_error)
+        self._keyring_worker.finished.connect(self._keyring_thread.quit)
+        self._keyring_thread.finished.connect(self._cleanup_keyring_thread)
+
+        self._keyring_thread.start()
+
+    def _on_keyring_finished(self, ok):
+        """Callback when the background keyring operation completes."""
+        if ok:
+            if hasattr(self, '_pending_auto_push') and self._pending_auto_push:
+                self._apply_credentials_to_existing_remotes(
+                    self._pending_auto_push[0],
+                    self._pending_auto_push[1]
+                )
+                self._pending_auto_push = None
+            self.credentialStatusChanged.emit()
+            self.logger.info("Keyring operation completed successfully.")
+        else:
+            self.logger.warning("Keyring operation returned failure.")
+
+    def _on_keyring_error(self, error_msg):
+        """Callback when the background keyring operation raises an exception."""
+        self.logger.error(f"Keyring operation error: {error_msg}")
+
+    def _cleanup_keyring_thread(self):
+        """Clean up thread and worker objects."""
+        self._keyring_busy = False
+        self.keyringBusyChanged.emit(False)
+        if self._keyring_thread:
+            self._keyring_thread.deleteLater()
+            self._keyring_thread = None
+        if self._keyring_worker:
+            self._keyring_worker.deleteLater()
+            self._keyring_worker = None
 
     # ------------------------------------------------------------------
     # Google Credential Management
@@ -29,27 +130,15 @@ class SettingsViewModel(QObject):
     def save_google_credentials(self, client_id, client_secret):
         """
         Store Google Client ID/Secret to system keyring.
-        The actual blocking keyring operation is deferred via QTimer.singleShot(0)
-        so the Qt event loop can first process pending window raise/activate events.
+        Uses a background thread so the Qt event loop stays responsive,
+        allowing window raise/alert events to process before the
+        KDE Wallet dialog appears.
         """
         if not client_id or not client_secret:
             self.logger.warning("Both client_id and client_secret are required.")
             return
-        self._pending_client_id = client_id
-        self._pending_client_secret = client_secret
-        QTimer.singleShot(0, self._do_save_google_credentials)
-
-    def _do_save_google_credentials(self):
-        """Actual blocking keyring save (runs after event loop processes pending events)."""
-        client_id = self._pending_client_id
-        client_secret = self._pending_client_secret
-        ok = SecretManager.save_google_credentials(client_id, client_secret)
-        if ok:
-            self._apply_credentials_to_existing_remotes(client_id, client_secret)
-            self.credentialStatusChanged.emit()
-            self.logger.info("Google credentials saved and pushed to existing remotes.")
-        else:
-            self.logger.warning("Failed to save Google credentials to keyring.")
+        self._pending_auto_push = (client_id, client_secret)
+        self._run_keyring_thread("save", client_id, client_secret)
 
     def _apply_credentials_to_existing_remotes(self, client_id, client_secret):
         """
@@ -73,7 +162,6 @@ class SettingsViewModel(QObject):
             for r in remotes:
                 name = r.rstrip(':')
                 try:
-                    # Silently update client_id/secret without triggering reauth
                     cmd = [
                         "rclone", "config", "update", name,
                         f"client_id={client_id}",
@@ -98,17 +186,11 @@ class SettingsViewModel(QObject):
     def delete_google_credentials(self):
         """
         Remove Google credentials from system keyring.
-        The actual blocking keyring operation is deferred via QTimer.singleShot(0)
-        so the Qt event loop can first process pending window raise/activate events.
+        Uses a background thread so the Qt event loop stays responsive,
+        allowing window raise/alert events to process before the
+        KDE Wallet dialog appears.
         """
-        QTimer.singleShot(0, self._do_delete_google_credentials)
-
-    def _do_delete_google_credentials(self):
-        """Actual blocking keyring delete (runs after event loop processes pending events)."""
-        ok = SecretManager.delete_google_credentials()
-        if ok:
-            self.credentialStatusChanged.emit()
-            self.logger.info("Google credentials deleted via Settings.")
+        self._run_keyring_thread("delete")
 
     # ------------------------------------------------------------------
     # Autostart

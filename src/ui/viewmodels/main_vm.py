@@ -73,6 +73,26 @@ class MainViewModel(QObject):
             self._window.raise_()
             self._window.requestActivate()
 
+    @pyqtSlot()
+    def alert_window(self):
+        """
+        Flash the window in the taskbar to draw user attention.
+        Works on both X11 and Wayland (unlike raise_/requestActivate).
+        Use this before blocking operations that may show system dialogs (KDE Wallet).
+        """
+        if self._window:
+            try:
+                # QQuickWindow inherits QWindow which has alert(int msec)
+                self._window.alert(5000)
+            except AttributeError:
+                self.logger.debug("alert() not available on this window")
+            try:
+                from PyQt6.QtWidgets import QApplication
+                # Also try QApplication.alert() as fallback
+                QApplication.alert(self._window, 5000)
+            except Exception:
+                pass
+
     @pyqtProperty(list, notify=remotesChanged)
     def remotes_model(self):
         return self._remotes
