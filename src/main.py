@@ -86,6 +86,9 @@ def main():
     sync_vm = SyncViewModel(sync_manager, client)
     settings_vm = SettingsViewModel(settings_manager, client, autostart_manager)
 
+    # Wire credential changes to dashboard refresh (transparent UI update)
+    settings_vm.credentialStatusChanged.connect(main_vm.refresh_remotes)
+
     # UI Engine
     engine.rootContext().setContextProperty("mainViewModel", main_vm)
     engine.rootContext().setContextProperty("main_vm", main_vm)

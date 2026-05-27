@@ -57,6 +57,11 @@ class MainViewModel(QObject):
     def mount_dir(self):
         return Config.mount_dir
 
+    @pyqtProperty(bool, notify=remotesChanged)
+    def hasGoogleCredentials(self):
+        from core.secret_manager import SecretManager
+        return SecretManager.has_google_credentials()
+
     @pyqtSlot()
     def hide_window(self):
         if self._window: self._window.hide()
@@ -156,6 +161,96 @@ class MainViewModel(QObject):
         worker.finished_success.connect(self._on_mount_success)
         worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
         worker.start()
+
+    # ------------------------------------------------------------------
+    # Reconnect Remote
+    # ------------------------------------------------------------------
+
+    reconnectStateChanged = pyqtSignal(str, str)  # remote_name, state: "idle"|"reconnecting"|"success"|"error"
+    reconnectStatusMessageChanged = pyqtSignal(str, str)  # remote_name, message
+
+    @pyqtSlot(str)
+    def reconnect_remote(self, remote_name):
+        """
+        Reautoriza un remote Google Drive usando las credenciales almacenadas en el keyring.
+        Paso 1: Actualiza client_id/client_secret en el remote
+        Paso 2: Abre el navegador para reautorizar
+        Paso 3: Actualiza el token en el remote
+        """
+        from core.secret_manager import SecretManager
+        import subprocess
+        import json
+
+        self.logger.info(f"Reconnecting remote: {remote_name}")
+        self.reconnectStateChanged.emit(remote_name, "reconnecting")
+        self.reconnectStatusMessageChanged.emit(remote_name, "Checking stored credentials...")
+
+        # 1. Obtener credenciales del keyring
+        creds = SecretManager.get_google_credentials()
+        if not creds:
+            self.logger.error(f"No stored credentials found for reconnecting {remote_name}")
+            self.reconnectStateChanged.emit(remote_name, "error")
+            self.reconnectStatusMessageChanged.emit(remote_name, "❌ No credentials in keyring. Save them in Settings first.")
+            return
+
+        try:
+            # 2. Actualizar client_id y client_secret (sin refrescar token aún)
+            self.reconnectStatusMessageChanged.emit(remote_name, "Updating credentials...")
+            update_cmd = [
+                "rclone", "config", "update", remote_name,
+                f"client_id={creds.client_id}",
+                f"client_secret={creds.client_secret}",
+                "config_refresh_token=false"
+            ]
+            result = subprocess.run(update_cmd, capture_output=True, text=True, timeout=15)
+            if result.returncode != 0:
+                raise Exception(f"Config update failed: {result.stderr}")
+            self.logger.info(f"Updated client_id/secret for {remote_name}")
+
+            # 3. Reautorizar (abre navegador)
+            self.reconnectStatusMessageChanged.emit(remote_name, "🔐 Opening browser for Google authorization...")
+            auth_cmd = ["rclone", "authorize", "drive", creds.client_id]
+            if creds.client_secret:
+                auth_cmd.append(creds.client_secret)
+
+            self.logger.info(f"Running: {' '.join(auth_cmd)}")
+            auth_result = subprocess.run(auth_cmd, capture_output=True, text=True, timeout=120)
+
+            if auth_result.returncode != 0:
+                raise Exception(f"Authorization failed: {auth_result.stderr}")
+
+            # 4. Parsear token del stdout
+            token_json = auth_result.stdout.strip()
+            try:
+                json.loads(token_json)
+            except json.JSONDecodeError:
+                start = token_json.find('{')
+                end = token_json.rfind('}') + 1
+                if start != -1 and end != -1:
+                    token_json = token_json[start:end]
+                else:
+                    raise Exception("Invalid token output from rclone authorize")
+
+            # 5. Actualizar token en el remote
+            self.reconnectStatusMessageChanged.emit(remote_name, "Saving new token...")
+            token_cmd = ["rclone", "config", "update", remote_name, f"token={token_json}"]
+            result = subprocess.run(token_cmd, capture_output=True, text=True, timeout=15)
+            if result.returncode != 0:
+                raise Exception(f"Token update failed: {result.stderr}")
+
+            self.logger.info(f"Reconnect successful for {remote_name}")
+            self.reconnectStateChanged.emit(remote_name, "success")
+            self.reconnectStatusMessageChanged.emit(remote_name, "✅ Reconnected successfully!")
+            self.refresh_remotes()
+
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Reconnect timed out for {remote_name}")
+            self.reconnectStateChanged.emit(remote_name, "error")
+            self.reconnectStatusMessageChanged.emit(remote_name, "⏱️ Authorization timed out. Try again.")
+        except Exception as e:
+            self.logger.exception(f"Reconnect failed for {remote_name}")
+            self.reconnectStateChanged.emit(remote_name, "error")
+            self.reconnectStatusMessageChanged.emit(remote_name, f"❌ Error: {str(e)}")
 
     @pyqtSlot(str)
     def delete_remote(self, remote_name):

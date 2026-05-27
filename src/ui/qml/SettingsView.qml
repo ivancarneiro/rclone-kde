@@ -12,6 +12,8 @@ Page {
 
     property string _editClientId: ""
     property string _editClientSecret: ""
+    // Map of remote_name -> reconnect status message
+    property var _reconnectStatuses: ({})
 
     header: ToolBar {
         RowLayout {
@@ -197,6 +199,88 @@ Page {
             Rectangle { height: 1; color: "#333"; Layout.fillWidth: true }
 
             // ============================================================
+            // RECONNECT REMOTES
+            // ============================================================
+            Label {
+                text: "Reconnect Drives"
+                font.bold: true
+                font.pixelSize: 16
+                color: "white"
+            }
+
+            Label {
+                text: "If a drive's credentials are outdated (e.g., after regenerating your Google OAuth keys), update them in the keyring above, then click 'Reconnect' to reauthorize without recreating the connection."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                color: "#AAA"
+                font.pixelSize: 12
+            }
+
+            // Reconnect button per remote
+            ListView {
+                id: reconnectList
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(contentHeight, 200)
+                clip: true
+                model: settingsViewModel.remotes_settings_model
+                visible: count > 0
+
+                delegate: Item {
+                    width: parent.width
+                    height: 44
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 5
+                        anchors.rightMargin: 5
+                        spacing: 10
+
+                        Label {
+                            text: modelData.name
+                            color: "white"
+                            font.pixelSize: 13
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                        }
+
+                        // Reconnect status
+                        Label {
+                            text: root._reconnectStatuses[modelData.name] || ""
+                            color: "#81C784"
+                            font.pixelSize: 11
+                            visible: text !== ""
+                        }
+
+                        Button {
+                            text: "🔄 Reconnect"
+                            enabled: settingsViewModel.hasGoogleCredentials
+                            onClicked: {
+                                root._reconnectStatuses[modelData.name] = "Reconnecting..."
+                                settingsViewModel.reconnect_remote(modelData.name)
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: 1
+                        color: "#333"
+                    }
+                }
+            }
+
+            // No remotes message
+            Label {
+                text: "No drives configured yet. Add one from the Dashboard."
+                color: "#666"
+                font.pixelSize: 12
+                visible: reconnectList.count === 0
+            }
+
+            Rectangle { height: 1; color: "#333"; Layout.fillWidth: true }
+
+            // ============================================================
             // AUTO-MOUNT
             // ============================================================
             Label {
@@ -251,6 +335,22 @@ Page {
                     }
                 }
             }
+        }
+    }
+
+    // Connections for reconnect state updates
+    Connections {
+        target: settingsViewModel
+        function onReconnectStateChanged(remoteName, state) {
+            if (state === "success") {
+                root._reconnectStatuses[remoteName] = "✅ Done!"
+            } else if (state === "error") {
+                root._reconnectStatuses[remoteName] = "❌ Failed"
+            }
+        }
+
+        function onReconnectStatusMessageChanged(remoteName, message) {
+            root._reconnectStatuses[remoteName] = message
         }
     }
 }

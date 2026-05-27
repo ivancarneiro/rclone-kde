@@ -248,17 +248,48 @@ ApplicationWindow {
                             }
                         }
                         
+                        // Reconnect status message
+                        Label {
+                            id: reconnectStatus
+                            visible: modelData.reconnect_status !== undefined && modelData.reconnect_status !== ""
+                            text: modelData.reconnect_status || ""
+                            color: modelData.reconnect_success === true ? "#81C784" : "#FFAB91"
+                            font.pixelSize: 11
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.right: reconnectButtonsLayout.left
+                            anchors.rightMargin: 10
+                            anchors.leftMargin: 5
+                            anchors.left: parent.left
+                            clip: true
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                        }
+
                         RowLayout {
+                            id: reconnectButtonsLayout
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.rightMargin: 10
-                            spacing: 10
+                            spacing: 6
 
                             // LOADING SPINNER
                             BusyIndicator {
                                 running: modelData.is_loading
                                 visible: modelData.is_loading
                                 Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            // Reconnect button (when not mounted and not loading)
+                            Button {
+                                visible: !modelData.is_mounted && !modelData.is_loading && mainViewModel.hasGoogleCredentials
+                                text: "🔄"
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Reconnect with stored credentials"
+                                onClicked: {
+                                    modelData.reconnect_status = "Reconnecting..."
+                                    mainViewModel.reconnect_remote(modelData.name)
+                                }
                             }
 
                             // Button 1: Mount / Open
@@ -316,6 +347,44 @@ ApplicationWindow {
             }
         }
     }
+    // Reconnect state connections
+    Connections {
+        target: mainViewModel
+        function onReconnectStateChanged(remoteName, state) {
+            // Update the model data to reflect reconnect state
+            var model = mainViewModel.remotes_model
+            for (var i = 0; i < model.length; i++) {
+                if (model[i].name === remoteName) {
+                    if (state === "reconnecting") {
+                        model[i].reconnect_status = "🔄 Reconnecting..."
+                        model[i].reconnect_success = false
+                    } else if (state === "success") {
+                        model[i].reconnect_status = "✅ Reconnected!"
+                        model[i].reconnect_success = true
+                        // Auto-clear after 5 seconds
+                        Qt.callLater(function() {
+                            model[i].reconnect_status = ""
+                        })
+                    } else if (state === "error") {
+                        model[i].reconnect_status = model[i].reconnect_status || "❌ Failed"
+                        model[i].reconnect_success = false
+                    }
+                    break
+                }
+            }
+        }
+
+        function onReconnectStatusMessageChanged(remoteName, message) {
+            var model = mainViewModel.remotes_model
+            for (var i = 0; i < model.length; i++) {
+                if (model[i].name === remoteName) {
+                    model[i].reconnect_status = message
+                    break
+                }
+            }
+        }
+    }
+
     MountOptionsDialog {
         id: mountOptionsDialog
         anchors.centerIn: parent
