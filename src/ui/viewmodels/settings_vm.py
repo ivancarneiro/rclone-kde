@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
 import logging
 from core.settings_manager import SettingsManager
 from core.rclone_client import RcloneClient
@@ -27,16 +27,29 @@ class SettingsViewModel(QObject):
 
     @pyqtSlot(str, str)
     def save_google_credentials(self, client_id, client_secret):
-        """Store Google Client ID/Secret to system keyring and auto-push to existing remotes."""
-        if client_id and client_secret:
-            ok = SecretManager.save_google_credentials(client_id, client_secret)
-            if ok:
-                # Auto-push credentials to existing remotes (transparent update)
-                self._apply_credentials_to_existing_remotes(client_id, client_secret)
-                self.credentialStatusChanged.emit()
-                self.logger.info("Google credentials saved and pushed to existing remotes.")
-        else:
+        """
+        Store Google Client ID/Secret to system keyring.
+        The actual blocking keyring operation is deferred via QTimer.singleShot(0)
+        so the Qt event loop can first process pending window raise/activate events.
+        """
+        if not client_id or not client_secret:
             self.logger.warning("Both client_id and client_secret are required.")
+            return
+        self._pending_client_id = client_id
+        self._pending_client_secret = client_secret
+        QTimer.singleShot(0, self._do_save_google_credentials)
+
+    def _do_save_google_credentials(self):
+        """Actual blocking keyring save (runs after event loop processes pending events)."""
+        client_id = self._pending_client_id
+        client_secret = self._pending_client_secret
+        ok = SecretManager.save_google_credentials(client_id, client_secret)
+        if ok:
+            self._apply_credentials_to_existing_remotes(client_id, client_secret)
+            self.credentialStatusChanged.emit()
+            self.logger.info("Google credentials saved and pushed to existing remotes.")
+        else:
+            self.logger.warning("Failed to save Google credentials to keyring.")
 
     def _apply_credentials_to_existing_remotes(self, client_id, client_secret):
         """
@@ -83,7 +96,15 @@ class SettingsViewModel(QObject):
 
     @pyqtSlot()
     def delete_google_credentials(self):
-        """Remove Google credentials from system keyring."""
+        """
+        Remove Google credentials from system keyring.
+        The actual blocking keyring operation is deferred via QTimer.singleShot(0)
+        so the Qt event loop can first process pending window raise/activate events.
+        """
+        QTimer.singleShot(0, self._do_delete_google_credentials)
+
+    def _do_delete_google_credentials(self):
+        """Actual blocking keyring delete (runs after event loop processes pending events)."""
         ok = SecretManager.delete_google_credentials()
         if ok:
             self.credentialStatusChanged.emit()
