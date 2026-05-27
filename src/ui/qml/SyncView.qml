@@ -46,7 +46,8 @@ Page {
 
     Popup {
         id: helpPopup
-        anchors.centerIn: parent
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
         width: Math.min(parent.width * 0.9, 400)
         height: Math.min(parent.height * 0.8, 500)
         modal: true
@@ -252,9 +253,10 @@ Page {
     Dialog {
         id: logDialog
         title: "Sync Logs"
-        width: 600
-        height: 400
-        anchors.centerIn: parent
+        width: Math.min(600, parent.width * 0.9)
+        height: Math.min(400, parent.height * 0.7)
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
         modal: true
         standardButtons: Dialog.Close
         
@@ -284,9 +286,10 @@ Page {
     Dialog {
         id: newTaskDialog
         title: "Create Sync Task"
-        width: 400
-        height: 350
-        anchors.centerIn: parent
+        width: Math.min(400, parent.width * 0.9)
+        height: Math.min(350, parent.height * 0.8)
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
         

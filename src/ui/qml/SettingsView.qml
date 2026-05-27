@@ -35,10 +35,14 @@ Page {
     ScrollView {
         anchors.fill: parent
         clip: true
+        contentWidth: availableWidth
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 20
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 20
+            anchors.rightMargin: 20
+            anchors.topMargin: 20
             spacing: 20
 
             // ============================================================

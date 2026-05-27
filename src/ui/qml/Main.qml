@@ -7,7 +7,9 @@ ApplicationWindow {
     id: root
     width: 900
     height: 600
-    title: "Rclone Manager"
+    minimumWidth: 700
+    minimumHeight: 500
+    title: stackView.currentItem ? stackView.currentItem.title + " - Rclone Manager" : "Rclone Manager"
     visible: true
     
     // Property to hold remote to delete
@@ -387,6 +389,7 @@ ApplicationWindow {
 
     MountOptionsDialog {
         id: mountOptionsDialog
-        anchors.centerIn: parent
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
     }
 }
