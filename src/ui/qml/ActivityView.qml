@@ -13,7 +13,7 @@ Page {
             anchors.fill: parent
             ToolButton {
                 text: "Back"
-                onClicked: stackView.pop()
+                onClicked: StackView.view.pop()
             }
             Label {
                 text: root.title

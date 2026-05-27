@@ -23,7 +23,7 @@ Page {
             anchors.fill: parent
             ToolButton {
                 text: "Back"
-                onClicked: stackView.pop()
+                onClicked: StackView.view.pop()
             }
             Label {
                 text: root.title
@@ -195,7 +195,7 @@ Page {
 
             Button {
                 text: "Cancel"
-                onClicked: stackView.pop()
+                onClicked: StackView.view.pop()
             }
 
             Button {
@@ -218,7 +218,7 @@ Page {
         target: wizardViewModel
         function onFinished() {
             mainViewModel.refresh_remotes()
-            stackView.pop()
+            StackView.view.pop()
         }
     }
 }

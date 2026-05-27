@@ -22,7 +22,7 @@ Page {
             anchors.fill: parent
             ToolButton {
                 text: "Back"
-                onClicked: stackView.pop()
+                onClicked: StackView.view.pop()
             }
             Label {
                 text: root.title
@@ -158,34 +158,36 @@ Page {
 
                     RowLayout {
                         Layout.alignment: Qt.AlignRight
-                        spacing: 8                            Button {
-                                text: "Cancel"
-                                onClicked: {
-                                    editClientIdField.text = ""
-                                    editClientSecretField.text = ""
-                                    credEditor.expanded = false
-                                }
-                            }
+                        spacing: 8
 
-                            Button {
-                                text: "Save to Keyring"
-                                enabled: editClientIdField.text.length > 0 && editClientSecretField.text.length > 0 && !root._keyringBusy
-                                onClicked: {
-                                    // 1. Raise and flash the main window so KDE Wallet dialog appears in front
-                                    mainViewModel.show_window()
-                                    mainViewModel.alert_window()
-                                    // 2. Trigger keyring save in background thread (UI stays responsive)
-                                    root._keyringBusy = true
-                                    root._keyringStatusText = "Saving credentials to system keyring... Please check for a KDE Wallet prompt in your taskbar."
-                                    settingsViewModel.save_google_credentials(
-                                        editClientIdField.text,
-                                        editClientSecretField.text
-                                    )
-                                    editClientIdField.text = ""
-                                    editClientSecretField.text = ""
-                                    credEditor.expanded = false
-                                }
+                        Button {
+                            text: "Cancel"
+                            onClicked: {
+                                editClientIdField.text = ""
+                                editClientSecretField.text = ""
+                                credEditor.expanded = false
                             }
+                        }
+
+                        Button {
+                            text: "Save to Keyring"
+                            enabled: editClientIdField.text.length > 0 && editClientSecretField.text.length > 0 && !root._keyringBusy
+                            onClicked: {
+                                // 1. Raise and flash the main window so KDE Wallet dialog appears in front
+                                mainViewModel.show_window()
+                                mainViewModel.alert_window()
+                                // 2. Trigger keyring save in background thread (UI stays responsive)
+                                root._keyringBusy = true
+                                root._keyringStatusText = "Saving credentials to system keyring... Please check for a KDE Wallet prompt in your taskbar."
+                                settingsViewModel.save_google_credentials(
+                                    editClientIdField.text,
+                                    editClientSecretField.text
+                                )
+                                editClientIdField.text = ""
+                                editClientSecretField.text = ""
+                                credEditor.expanded = false
+                            }
+                        }
                     }
                 }
             }
