@@ -150,12 +150,13 @@ class SyncViewModel(QObject):
 
     def _on_sync_log(self, task_id, line):
         """Slot interno para recibir logs del worker."""
+        # self.logger.debug(f"Sync Log Task {task_id}: {line}")
         if task_id not in self._task_logs:
             self._task_logs[task_id] = []
 
         # Guardar en memoria
         self._task_logs[task_id].append(line)
-        # Emitir a QML
+        # Emitir a QML (y ActivityViewModel)
         self.logReceived.emit(task_id, line)
 
         # CRITICAL ERROR DETECTION & AUTO-RECOVERY

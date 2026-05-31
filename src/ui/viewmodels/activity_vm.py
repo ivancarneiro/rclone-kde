@@ -1,7 +1,41 @@
 import asyncio
-from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, QTimer, pyqtSlot
 import logging
 import datetime
+import time
+import re
+from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, QTimer, pyqtSlot, QThread
+
+class StatsWorker(QThread):
+    """
+    Worker en segundo plano para consultar estadísticas sin bloquear la UI.
+    """
+    stats_ready = pyqtSignal(dict)
+
+    def __init__(self, client):
+        super().__init__()
+        self._client = client
+        self._running = True
+
+    def stop(self):
+        self._running = False
+
+    def run(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        while self._running:
+            try:
+                # Usar un timeout para no quedar bloqueado si la red cae
+                stats = loop.run_until_complete(self._client.core_stats())
+                if stats and "error" not in stats:
+                    self.stats_ready.emit(stats)
+            except Exception as e:
+                logging.debug(f"Stats worker error: {e}")
+            
+            # Esperar 1 segundo antes de la siguiente consulta
+            loop.run_until_complete(asyncio.sleep(1.0))
+        
+        loop.close()
 
 class ActivityViewModel(QObject):
     activityChanged = pyqtSignal()
@@ -13,17 +47,16 @@ class ActivityViewModel(QObject):
         self._activity = []
         self.logger = logging.getLogger(__name__)
 
-        # Connect log signal from SyncViewModel
+        # Conectar señales de logs de sincronización
         self._sync_vm.logReceived.connect(self._process_log)
 
-        # Polling Timer (1.0s para mayor respuesta)
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._poll_stats)
-        self._timer.start(1000)
+        # Iniciar worker de estadísticas
+        self._worker = StatsWorker(self._client)
+        self._worker.stats_ready.connect(self._update_live_transfers)
+        self._worker.start()
 
     @pyqtProperty(list, notify=activityChanged)
     def activity_model(self):
-        # Return reversed list to show newest on top
         return list(reversed(self._activity))
 
     @pyqtSlot()
@@ -31,41 +64,28 @@ class ActivityViewModel(QObject):
         self._activity = []
         self.activityChanged.emit()
 
-    def _poll_stats(self):
-        try:
-             # Ejecutamos la llamada asíncrona de forma segura para Qt
-             loop = asyncio.new_event_loop()
-             asyncio.set_event_loop(loop)
-             stats = loop.run_until_complete(self._client.core_stats())
-             loop.close()
-             self._update_live_transfers(stats)
-        except Exception as e:
-             self.logger.debug(f"Stats poll error: {e}") 
-
     def _update_live_transfers(self, stats):
-        if not stats: 
-            return
+        if not stats: return
             
         changed = False
         seen_active_names = set()
             
-        # 1. Active Transfers (Lo que rclone está haciendo AHORA)
+        # 1. Transferencias Activas
         current_transfers = stats.get("transferring", [])
         for t in current_transfers:
             name = t.get("name", "Unknown")
             seen_active_names.add(name)
             changed |= self._add_or_update_item(name, t.get("size", 0), t.get("bytes", 0), "syncing", is_active=True)
         
-        # 2. Completed Transfers (Historial de la sesión de rclone)
+        # 2. Transferencias Completadas
         completed_transfers = stats.get("transferred", [])
         for t in completed_transfers:
             name = t.get("name", "Unknown")
             changed |= self._add_or_update_item(name, t.get("size", 0), t.get("size", 0), "success", is_active=False)
         
-        # 3. Cleanup Ghosts (Items que desaparecieron de 'transferring' sin ir a 'transferred')
+        # 3. Limpieza de items que ya no están activos
         for item in self._activity:
             if item["status"] == "syncing" and item["name"] not in seen_active_names:
-                # Si ya no está transfiriendo, asumimos que terminó o se movió al historial
                 item["status"] = "success"
                 item["progress"] = 100
                 changed = True
@@ -76,10 +96,8 @@ class ActivityViewModel(QObject):
     def _add_or_update_item(self, name, size, bytes_done, status, is_active):
         percentage = 100 if not is_active else (int((bytes_done / size) * 100) if size > 0 else 0)
         
-        # Buscar duplicado para actualizar
         for item in self._activity:
             if item["name"] == name:
-                # No bajamos de status (si ya es success, no vuelve a syncing)
                 if item["status"] == "success" and status == "syncing":
                     return False
                 
@@ -92,7 +110,6 @@ class ActivityViewModel(QObject):
                     updated = True
                 return updated
 
-        # Si no existe, lo agregamos
         new_item = {
             "name": name,
             "type": self._guess_type(name),
@@ -105,29 +122,34 @@ class ActivityViewModel(QObject):
         return True
 
     def _process_log(self, task_id, line):
-        # El Activity Monitor también escucha los logs crudos para detectar DELETIONS
-        # que rclone core/stats NO reporta como transferencias.
-        changed = False
+        # Limpiar prefijos de sistema <6>INFO o timestamps
+        clean_line = re.sub(r'<\d+>|^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} ', '', line)
         
-        if "Deleted" in line:
-            filename = self._extract_filename(line)
+        changed = False
+        if "Deleted" in clean_line:
+            filename = self._extract_filename(clean_line)
             if filename:
                 changed = self._add_or_update_item(filename, 0, 0, "deleted", is_active=False)
-        
-        elif "Copied" in line:
-            filename = self._extract_filename(line)
+        elif "Copied" in clean_line or "Updated modification time" in clean_line:
+            filename = self._extract_filename(clean_line)
             if filename:
                 changed = self._add_or_update_item(filename, 0, 0, "success", is_active=False)
+        elif "Failed to" in clean_line:
+            filename = self._extract_filename(clean_line)
+            if filename:
+                changed = self._add_or_update_item(filename, 0, 0, "error", is_active=False)
                 
         if changed:
             self.activityChanged.emit()
 
     def _extract_filename(self, line):
-        # Espera formato: "INFO  : folder/file.txt: Deleted"
+        # Busca patrones tipo "INFO  : filename: status"
+        match = re.search(r'INFO\s+:\s+(.*?):', line)
+        if match:
+            return match.group(1).strip()
+        # Fallback a split si el regex falla
         parts = line.split(":")
-        if len(parts) >= 3:
-            return parts[-2].strip()
-        return None
+        return parts[-2].strip() if len(parts) >= 3 else None
 
     def _guess_type(self, filename):
         ext = filename.split(".")[-1].lower() if "." in filename else ""
