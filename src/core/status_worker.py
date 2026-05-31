@@ -2,7 +2,6 @@ import asyncio
 import logging
 import aiohttp
 from PyQt6.QtCore import QThread, pyqtSignal
-from core.config import Config
 
 class StatusWorker(QThread):
     """

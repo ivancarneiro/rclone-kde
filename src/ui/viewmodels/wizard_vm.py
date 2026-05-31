@@ -174,7 +174,7 @@ class WizardViewModel(QObject):
             create_cmd = [
                 "rclone", "rc", "config/create",
                 f"name={name}",
-                f"type=drive",
+                "type=drive",
                 f"parameters={parameters_json}",
                 "--rc-addr=localhost:5572",
                 "--rc-user=rclone",

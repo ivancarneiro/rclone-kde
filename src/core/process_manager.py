@@ -24,7 +24,7 @@ class RcloneProcessManager:
     def _cleanup_port_hogs(self):
         """Mata procesos rclone antiguos que ocupen el puerto configurado."""
         try:
-            port = self.rc_addr.split(":")[-1]
+            self.rc_addr.split(":")[-1]
             pattern = f"rc-addr={self.rc_addr}"
             self.logger.info(f"Cleaning up old processes on {self.rc_addr}...")
             subprocess.run(["pkill", "-f", pattern], check=False)
@@ -70,7 +70,7 @@ class RcloneProcessManager:
             self.logger.info(f"Rclone daemon started (PID: {self.process.pid}). Logs at {log_path}")
             time.sleep(3)
             return True
-        except Exception as e:
+        except Exception:
             self.logger.exception("Failed to start rclone daemon")
             return False
 

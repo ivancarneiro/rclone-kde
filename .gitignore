@@ -16,6 +16,20 @@ settings.json
 sync_tasks.json
 *.log
 
+# Development & Internal (Local only)
+GEMINI.md
+ROADMAP.md
+test_integration.py
+rclone_kde.spec
+DEPLOY_*.md
+*_icon.py
+crop_icon.py
+debug_rclone.py
+rclone_start.sh
+setup.sh
+start.sh
+
+
 # IDE
 .vscode/
 .idea/

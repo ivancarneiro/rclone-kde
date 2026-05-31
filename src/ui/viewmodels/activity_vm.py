@@ -1,5 +1,5 @@
 import asyncio
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, QTimer
 import logging
 import datetime
 
@@ -34,7 +34,7 @@ class ActivityViewModel(QObject):
              stats = loop.run_until_complete(self._client.core_stats())
              loop.close()
              self._update_live_transfers(stats)
-        except Exception as e:
+        except Exception:
              # Just logging debug to avoid flooding if rclone is busy/off
              # self.logger.debug(f"Stats poll error: {e}") 
              pass

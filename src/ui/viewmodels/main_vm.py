@@ -279,7 +279,6 @@ class MainViewModel(QObject):
         # Por ahora lo simplificamos para evitar el crash de loops anidados.
         self.logger.info(f"Deleting remote {remote_name}...")
         import subprocess
-        from core.config import Config
         
         # Cleanup local
         mount_point = self._mount_manager.get_mount_point(remote_name)

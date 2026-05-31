@@ -96,7 +96,7 @@ class SyncViewModel(QObject):
 
         # Empty check is crucial for 'sync' (Backup): Empty local means DELETE REMOTE.
         if strategy == "sync" and not os.listdir(local):
-            self._on_sync_error(task_id, f"SAFETY: Local folder is empty. This would wipe the remote (Backup). Aborting.")
+            self._on_sync_error(task_id, "SAFETY: Local folder is empty. This would wipe the remote (Backup). Aborting.")
             return
 
         # Construir Comando Basico
