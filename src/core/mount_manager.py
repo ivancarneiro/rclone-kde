@@ -85,6 +85,7 @@ class MountManager:
         cache_dir = os.path.join(Config.base_dir, "data", "cache")
         os.makedirs(cache_dir, exist_ok=True)
         
+        log_path = os.path.expanduser("~/.cache/rclone-kde.log")
         cmd = [
             "rclone", "mount", f"{remote_name}:", mount_point,
             "--vfs-cache-mode", "full",
@@ -95,7 +96,9 @@ class MountManager:
             "--no-modtime",
             "--max-size", "1G",
             "--daemon",
-            "--config", Config.RCLONE_CONF
+            "--config", Config.RCLONE_CONF,
+            "--log-file", log_path,
+            "--log-level", "INFO"
         ]
         
         if read_only:
