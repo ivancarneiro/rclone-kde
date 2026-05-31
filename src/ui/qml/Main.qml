@@ -128,17 +128,13 @@ ApplicationWindow {
             header: ToolBar {
                 RowLayout {
                     anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
                     ToolButton {
                         text: "☰"
                         onClicked: drawer.open()
                     }
-                    Label {
-                        text: "Remotes Dashboard"
-                        elide: Label.ElideRight
-                        horizontalAlignment: Qt.AlignHCenter
-                        verticalAlignment: Qt.AlignVCenter
-                        Layout.fillWidth: true
-                    }
+                    Item { Layout.fillWidth: true }
                 }
             }
             
