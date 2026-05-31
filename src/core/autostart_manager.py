@@ -31,14 +31,15 @@ X-GNOME-Autostart-enabled=true
             if not os.path.exists(self.autostart_dir):
                 os.makedirs(self.autostart_dir)
 
-            # Usamos el ejecutable actual. 
-            # Si corre desde python: python3 /path/to/main.py --minimized
-            python_exe = sys.executable
-            script_path = os.path.abspath(sys.argv[0])
-            
-            # TODO: Ajustar si se empaqueta como binario (PyInstaller)
-            # Por ahora asumimos lanzamiento con python
-            exec_cmd = f"{python_exe} {script_path} --minimized"
+            # Detección inteligente para PyInstaller o Python script
+            if getattr(sys, 'frozen', False):
+                # Si es un binario empaquetado
+                exec_cmd = f"{sys.executable} --minimized"
+            else:
+                # Si corre desde python directo
+                python_exe = sys.executable
+                script_path = os.path.abspath(sys.argv[0])
+                exec_cmd = f"{python_exe} {script_path} --minimized"
             
             content = self.DESKTOP_ENTRY_TEMPLATE.format(exec_cmd=exec_cmd)
             

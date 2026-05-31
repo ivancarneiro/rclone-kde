@@ -75,12 +75,22 @@ class RcloneProcessManager:
             return False
 
     def stop_daemon(self):
-        """Detiene el proceso si fue iniciado por esta instancia."""
+        """Detiene el proceso si fue iniciado por esta instancia de forma quirúrgica."""
         if self.process:
-            self.process.terminate()
-            self.process.wait(timeout=5)
-            self.logger.info("Rclone daemon stopped")
-            self.process = None
+            pid = self.process.pid
+            self.logger.info(f"Stopping Rclone daemon (PID: {pid})...")
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=5)
+                self.logger.info("Rclone daemon stopped gracefully.")
+            except subprocess.TimeoutExpired:
+                self.logger.warning(f"Daemon (PID: {pid}) did not terminate, killing...")
+                self.process.kill()
+            except Exception as e:
+                self.logger.error(f"Error stopping daemon: {e}")
+            finally:
+                self.process = None
+        
         if self.log_file:
             self.log_file.close()
             self.log_file = None

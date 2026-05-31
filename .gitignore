@@ -9,6 +9,8 @@ env/
 client_secret_*.json
 
 # App Specific Data (Do NOT commit these)
+data/
+mounts/
 rclone-dev.conf
 settings.json
 sync_tasks.json
