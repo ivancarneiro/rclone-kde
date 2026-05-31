@@ -11,17 +11,13 @@ Page {
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
             ToolButton {
                 text: "Back"
                 onClicked: stackView.pop()
             }
-            Label {
-                text: root.title
-                elide: Text.ElideRight
-                horizontalAlignment: Qt.AlignHCenter
-                verticalAlignment: Qt.AlignVCenter
-                Layout.fillWidth: true
-            }
+            Item { Layout.fillWidth: true } // Espaciador
         }
     }
 
