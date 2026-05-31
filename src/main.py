@@ -45,6 +45,14 @@ def setup_tray(app, icon_path, main_vm):
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("Main")
+
+    # Single Instance Check
+    from core.single_instance import SingleInstanceCheck
+    lock = SingleInstanceCheck()
+    if lock.is_running():
+        logger.error("Application is already running. Exiting.")
+        return 1
 
     # Init Backend
     rc_password = Config.get_rc_pass()

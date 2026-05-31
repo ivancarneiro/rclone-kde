@@ -22,7 +22,7 @@ Page {
             anchors.fill: parent
             ToolButton {
                 text: "Back"
-                onClicked: StackView.view.pop()
+                onClicked: stackView.pop()
             }
             Label {
                 text: root.title
