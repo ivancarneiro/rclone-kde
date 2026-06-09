@@ -1,5 +1,10 @@
 # Rclone Manager - Project Instructions
 
+## Flujo de Trabajo (Git Flow)
+- **Rama `master`**: Reservada estrictamente para producción. NUNCA hacer push directo.
+- **Rama `staging`**: Rama principal de desarrollo y pruebas. Todos los cambios nuevos deben integrarse aquí primero.
+- **Merge a master**: Solo mediante Pull Request tras verificar que `staging` es 100% estable.
+
 ## Convenciones de Desarrollo
 - **Commits**: Seguir [Conventional Commits](https://www.conventionalcommits.org/) (ej: `fix(mount): ...`, `docs: ...`).
 - **Documentación**: 
