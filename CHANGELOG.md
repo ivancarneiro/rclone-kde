@@ -4,6 +4,14 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-06-09
+### Added
+- **Integración con KeePassXC**: Lanzamiento automático de la base de datos al montar una unidad virtual.
+- **Configuración visual**: Nueva sección en Settings para elegir el remoto y la ruta de la DB de KeePassXC.
+
+### Security
+- **Eliminación de scripts externos**: Se eliminaron los scripts de inicio condicional inseguros, integrando la lógica directamente en la app mediante el Keyring del sistema.
+
 ## [1.3.0] - 2026-05-26
 ### Added
 - **Reconnect Drive**: Botón 🔄 en Dashboard y Settings para reautorizar remotos con credenciales del keyring sin perder configuración
