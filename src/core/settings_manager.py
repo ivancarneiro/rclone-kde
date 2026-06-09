@@ -13,7 +13,9 @@ class SettingsManager:
         self.settings_file = os.path.join(Config.base_dir, "settings.json")
         self._settings = {
             "auto_mounts": [],
-            "start_minimized": False
+            "start_minimized": False,
+            "keepassxc_remote": "",
+            "keepassxc_db_path": ""
         }
         self.load_settings()
 
@@ -64,6 +66,17 @@ class SettingsManager:
 
     def set_start_minimized(self, enabled):
         self._settings["start_minimized"] = enabled
+        self.save_settings()
+
+    def get_keepassxc_config(self):
+        return {
+            "remote": self._settings.get("keepassxc_remote", ""),
+            "db_path": self._settings.get("keepassxc_db_path", "")
+        }
+
+    def set_keepassxc_config(self, remote, db_path):
+        self._settings["keepassxc_remote"] = remote
+        self._settings["keepassxc_db_path"] = db_path
         self.save_settings()
 
     def get_keepassxc_config(self):
