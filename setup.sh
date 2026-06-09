@@ -1,36 +1,18 @@
 #!/bin/bash
 
-echo "🚀 Installing Rclone Manager..."
+echo "🚀 Installing Rclone Manager (UV Mode)..."
 
-# 1. Create Virtual Env
-if [ ! -d ".venv" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv .venv
+# Ensure uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is not installed. Please install it first: https://docs.astral.sh/uv/getting-started/installation/"
+    exit 1
 fi
 
-# Check for Rclone
-if ! command -v rclone &> /dev/null; then
-    echo "Rclone not found. Installing..."
-    # Check if we have sudo
-    if command -v sudo &> /dev/null; then
-        sudo -v
-        curl https://rclone.org/install.sh | sudo bash
-    else
-        echo "Error: sudo not found. Please install rclone manually: curl https://rclone.org/install.sh | bash"
-    fi
-else
-    echo "Rclone is already installed."
-fi
+# 1. Sync environment
+echo "Syncing environment with uv..."
+uv sync
 
-# 2. Activate
-source .venv/bin/activate
-
-# 3. Install Requirements
-echo "Installing dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 4. Create Desktop Entry
+# 2. Create Desktop Entry
 echo "Creating Desktop Shortcut..."
 mkdir -p ~/.local/share/applications
 
@@ -41,7 +23,7 @@ EXEC_PATH="$BASE_DIR/start.sh"
 
 cat > ~/.local/share/applications/rclone-gui-final.desktop <<EOF
 [Desktop Entry]
-Name=Rclone Manager (Final)
+Name=Rclone Manager
 Comment=Manage your Cloud Drive mounts with ease
 Exec=$EXEC_PATH
 Icon=$ICON_PATH
@@ -54,9 +36,13 @@ echo "✅ Installation Complete!"
 echo "You can find 'Rclone Manager' in your Application Menu."
 echo "Or run it manually: ./start.sh"
 
-# Create start script
-echo "#!/bin/bash" > start.sh
-echo "cd \"$BASE_DIR\"" >> start.sh
-echo "source .venv/bin/activate" >> start.sh
-echo "python3 src/main.py" >> start.sh
-chmod +x start.sh
+# Ensure start.sh is correct and executable
+if [ ! -f "start.sh" ]; then
+    cat > start.sh <<EOF
+#!/bin/bash
+SCRIPT_DIR="\$( cd "\$( dirname "\${BASH_SOURCE[0]}" )" && pwd )"
+cd "\$SCRIPT_DIR"
+uv run python3 src/main.py "\$@"
+EOF
+    chmod +x start.sh
+fi

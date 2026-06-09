@@ -160,6 +160,21 @@ class MainViewModel(QObject):
         
         if result.get("action") != "unmount":
             NotificationManager.send("Drive Ready", f"{remote_name} is mounted.")
+            
+            # Lanzar KeePassXC si está configurado para este remoto
+            kp_config = self._settings_manager.get_keepassxc_config()
+            if kp_config["remote"] == remote_name:
+                mount_point = result.get("mount_point")
+                db_path = os.path.join(mount_point, kp_config["db_path"])
+                
+                if os.path.exists(db_path):
+                    self.logger.info(f"Launching KeePassXC with DB: {db_path}")
+                    import subprocess
+                    subprocess.Popen(["keepassxc", db_path])
+                    NotificationManager.send("KeePassXC", "Database loaded automatically.")
+                else:
+                    self.logger.warning(f"KeePassXC DB not found at {db_path}")
+
             # Abrir Dolphin
             import subprocess
             subprocess.Popen(["xdg-open", result.get("mount_point")])

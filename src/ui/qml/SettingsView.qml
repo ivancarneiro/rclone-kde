@@ -72,6 +72,65 @@ Page {
             Rectangle { height: 1; color: "#333"; Layout.fillWidth: true }
 
             // ============================================================
+            // KEEPASSXC INTEGRATION
+            // ============================================================
+            Label {
+                text: "KeePassXC Integration"
+                font.bold: true
+                font.pixelSize: 16
+                color: "white"
+            }
+
+            Label {
+                text: "Automatically launch KeePassXC when a specific virtual drive is mounted."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                color: "#AAA"
+                font.pixelSize: 12
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Associated Remote:"; color: "white"; Layout.preferredWidth: 120 }
+                    ComboBox {
+                        id: kpRemoteCombo
+                        Layout.fillWidth: true
+                        model: ["None"].concat(settingsViewModel.remotes_settings_model.map(r => r.name))
+                        currentIndex: {
+                            let idx = model.indexOf(settingsViewModel.keepassxc_remote)
+                            return idx !== -1 ? idx : 0
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Database Path:"; color: "white"; Layout.preferredWidth: 120 }
+                    TextField {
+                        id: kpDbPathField
+                        text: settingsViewModel.keepassxc_db_path
+                        placeholderText: "e.g. passwords.kdbx"
+                        Layout.fillWidth: true
+                    }
+                }
+
+                Button {
+                    text: "💾 Save KeePassXC Config"
+                    Layout.alignment: Qt.AlignRight
+                    onClicked: {
+                        let selectedRemote = kpRemoteCombo.currentText === "None" ? "" : kpRemoteCombo.currentText
+                        settingsViewModel.save_keepassxc_config(selectedRemote, kpDbPathField.text)
+                    }
+                }
+            }
+
+            Rectangle { height: 1; color: "#333"; Layout.fillWidth: true }
+
+            // ============================================================
             // GOOGLE CREDENTIALS
             // ============================================================
             Label {

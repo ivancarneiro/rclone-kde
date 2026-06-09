@@ -31,14 +31,17 @@ X-GNOME-Autostart-enabled=true
             if not os.path.exists(self.autostart_dir):
                 os.makedirs(self.autostart_dir)
 
-            # Usamos el ejecutable actual. 
-            # Si corre desde python: python3 /path/to/main.py --minimized
-            python_exe = sys.executable
-            script_path = os.path.abspath(sys.argv[0])
+            # Preferimos usar start.sh si existe, ya que centraliza la lógica de uv/venv
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            start_script = os.path.join(base_dir, "start.sh")
             
-            # TODO: Ajustar si se empaqueta como binario (PyInstaller)
-            # Por ahora asumimos lanzamiento con python
-            exec_cmd = f"{python_exe} {script_path} --minimized"
+            if os.path.exists(start_script):
+                exec_cmd = f"{start_script} --minimized"
+            else:
+                # Fallback al ejecutable actual
+                python_exe = sys.executable
+                script_path = os.path.abspath(sys.argv[0])
+                exec_cmd = f"{python_exe} {script_path} --minimized"
             
             content = self.DESKTOP_ENTRY_TEMPLATE.format(exec_cmd=exec_cmd)
             

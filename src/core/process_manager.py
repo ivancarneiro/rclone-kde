@@ -1,8 +1,10 @@
 import subprocess
 import time
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import shutil
 import os
+import threading
 
 class RcloneProcessManager:
     """
@@ -15,8 +17,42 @@ class RcloneProcessManager:
         self.rc_pass = rc_pass
         self.rc_conf = rc_conf
         self.process = None
-        self.log_file = None
         self.logger = logging.getLogger(__name__)
+        self._rclone_logger = None
+        self._log_thread = None
+
+    def _setup_rclone_logger(self):
+        """Configura un logger con rotación para la salida de rclone."""
+        log_path = os.path.expanduser("~/.cache/rclone-kde.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        
+        self._rclone_logger = logging.getLogger("rclone_daemon")
+        self._rclone_logger.propagate = False  # Don't send to root logger
+        
+        # Rotación de 30 días
+        handler = TimedRotatingFileHandler(
+            log_path,
+            when='D',
+            interval=1,
+            backupCount=30,
+            encoding='utf-8'
+        )
+        formatter = logging.Formatter('%(asctime)s - %(message)s')
+        handler.setFormatter(formatter)
+        
+        # Limpiar handlers previos si existen
+        self._rclone_logger.handlers = []
+        self._rclone_logger.addHandler(handler)
+        self._rclone_logger.setLevel(logging.DEBUG)
+
+    def _log_reader_task(self):
+        """Lee la salida del proceso rclone y la envía al logger."""
+        try:
+            for line in iter(self.process.stdout.readline, ''):
+                if line:
+                    self._rclone_logger.debug(line.strip())
+        except Exception as e:
+            self.logger.error(f"Error reading rclone logs: {e}")
 
     def is_installed(self):
         return shutil.which("rclone") is not None
@@ -24,7 +60,6 @@ class RcloneProcessManager:
     def _cleanup_port_hogs(self):
         """Mata procesos rclone antiguos que ocupen el puerto configurado."""
         try:
-            port = self.rc_addr.split(":")[-1]
             pattern = f"rc-addr={self.rc_addr}"
             self.logger.info(f"Cleaning up old processes on {self.rc_addr}...")
             subprocess.run(["pkill", "-f", pattern], check=False)
@@ -39,6 +74,7 @@ class RcloneProcessManager:
             return False
 
         self._cleanup_port_hogs()
+        self._setup_rclone_logger()
 
         env = os.environ.copy()
         env["RCLONE_RC_PASS"] = self.rc_pass
@@ -58,17 +94,21 @@ class RcloneProcessManager:
         self.logger.info(f"Starting Rclone Daemon on {self.rc_addr}")
 
         try:
-            log_path = os.path.expanduser("~/.cache/rclone-kde.log")
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            self.log_file = open(log_path, "a")
             self.process = subprocess.Popen(
                 cmd,
-                stdout=self.log_file,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                env=env
+                env=env,
+                text=True,
+                bufsize=1  # Line buffered
             )
-            self.logger.info(f"Rclone daemon started (PID: {self.process.pid}). Logs at {log_path}")
-            time.sleep(3)
+            
+            # Iniciar hilo para capturar logs
+            self._log_thread = threading.Thread(target=self._log_reader_task, daemon=True)
+            self._log_thread.start()
+            
+            self.logger.info(f"Rclone daemon started (PID: {self.process.pid}). Output piped to rotating logger.")
+            time.sleep(2)
             return True
         except Exception as e:
             self.logger.exception("Failed to start rclone daemon")
@@ -78,9 +118,9 @@ class RcloneProcessManager:
         """Detiene el proceso si fue iniciado por esta instancia."""
         if self.process:
             self.process.terminate()
-            self.process.wait(timeout=5)
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
             self.logger.info("Rclone daemon stopped")
             self.process = None
-        if self.log_file:
-            self.log_file.close()
-            self.log_file = None

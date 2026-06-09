@@ -349,3 +349,21 @@ class SettingsViewModel(QObject):
             if r["name"] == remote_name:
                 r["auto_mount"] = enabled
         self.settingsChanged.emit()
+
+    # ------------------------------------------------------------------
+    # KeePassXC Integration
+    # ------------------------------------------------------------------
+
+    @pyqtProperty(str, notify=settingsChanged)
+    def keepassxc_remote(self):
+        return self._settings_manager.get_keepassxc_config()["remote"]
+
+    @pyqtProperty(str, notify=settingsChanged)
+    def keepassxc_db_path(self):
+        return self._settings_manager.get_keepassxc_config()["db_path"]
+
+    @pyqtSlot(str, str)
+    def save_keepassxc_config(self, remote, db_path):
+        self.logger.info(f"Saving KeePassXC config: {remote} -> {db_path}")
+        self._settings_manager.set_keepassxc_config(remote, db_path)
+        self.settingsChanged.emit()

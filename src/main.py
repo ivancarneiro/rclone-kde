@@ -1,5 +1,6 @@
 import sys
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import signal
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtQml import QQmlApplicationEngine
@@ -44,7 +45,28 @@ def setup_tray(app, icon_path, main_vm):
     return tray_icon
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    # Setup persistent logging with 30-day rotation
+    log_path = os.path.expanduser("~/.cache/rclone-manager.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    
+    handler = TimedRotatingFileHandler(
+        log_path,
+        when='D',
+        interval=1,
+        backupCount=30,
+        encoding='utf-8'
+    )
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            handler,
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    
+    logging.info("--- Application Starting ---")
 
     # Init Backend
     rc_password = Config.get_rc_pass()
