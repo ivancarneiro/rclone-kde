@@ -78,14 +78,3 @@ class SettingsManager:
         self._settings["keepassxc_remote"] = remote
         self._settings["keepassxc_db_path"] = db_path
         self.save_settings()
-
-    def get_keepassxc_config(self):
-        return {
-            "remote": self._settings.get("keepassxc_remote", ""),
-            "db_path": self._settings.get("keepassxc_db_path", "")
-        }
-
-    def set_keepassxc_config(self, remote, db_path):
-        self._settings["keepassxc_remote"] = remote
-        self._settings["keepassxc_db_path"] = db_path
-        self.save_settings()
