@@ -65,7 +65,8 @@ class MainViewModel(QObject):
 
     @pyqtSlot()
     def hide_window(self):
-        if self._window: self._window.hide()
+        if self._window:
+            self._window.hide()
     
     @pyqtSlot()
     def show_window(self):
@@ -136,7 +137,8 @@ class MainViewModel(QObject):
     @pyqtSlot(str, bool, bool)
     def mount_remote(self, remote_name, read_only=False, network_mode=False):
         try:
-            if remote_name in self._mounting_remotes: return
+            if remote_name in self._mounting_remotes:
+                return
             
             self.logger.info(f"Mounting {remote_name}...")
             self._mounting_remotes.add(remote_name)
@@ -295,7 +297,6 @@ class MainViewModel(QObject):
         # Por ahora lo simplificamos para evitar el crash de loops anidados.
         self.logger.info(f"Deleting remote {remote_name}...")
         import subprocess
-        from core.config import Config
         
         # Cleanup local
         mount_point = self._mount_manager.get_mount_point(remote_name)

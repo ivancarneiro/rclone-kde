@@ -1,7 +1,5 @@
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QThread
 import logging
-from core.settings_manager import SettingsManager
-from core.rclone_client import RcloneClient
 from core.secret_manager import SecretManager
 
 

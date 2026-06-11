@@ -26,4 +26,7 @@ dev = [
     "black>=23.0",
     "mypy>=1.0",
     "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.16",
+    "bandit>=1.9.4",
+    "pyqt6-stubs>=20250824",
 ]

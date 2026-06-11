@@ -13,6 +13,8 @@ rclone-dev.conf
 settings.json
 sync_tasks.json
 *.log
+data/
+mounts/
 
 # IDE
 .vscode/

@@ -2,7 +2,6 @@ import asyncio
 import logging
 import aiohttp
 from PyQt6.QtCore import QThread, pyqtSignal
-from core.config import Config
 
 class StatusWorker(QThread):
     """
@@ -81,7 +80,7 @@ class StatusWorker(QThread):
                     used = about_resp.get("used", 0)
                     quota_text = self._sizeof_fmt(used) + " / " + self._sizeof_fmt(total)
                     storage_percent = (used / total) if total > 0 else 0
-            except:
+            except Exception:
                 pass
 
             enriched_remotes.append({
@@ -102,7 +101,8 @@ class StatusWorker(QThread):
             import json
             token_data = json.loads(token_str)
             access_token = token_data.get('access_token')
-            if not access_token: return None
+            if not access_token:
+                return None
             
             headers = {"Authorization": f"Bearer {access_token}"}
             async with aiohttp.ClientSession() as session:
@@ -110,7 +110,7 @@ class StatusWorker(QThread):
                     if resp.status == 200:
                         data = await resp.json()
                         return data.get("user", {}).get("emailAddress")
-        except:
+        except Exception:
             pass
         return None
 

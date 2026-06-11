@@ -1,5 +1,3 @@
-import os
-import sys
 import socket
 import logging
 
@@ -26,5 +24,5 @@ class SingleInstanceCheck:
     def cleanup(self):
         try:
             self.socket.close()
-        except:
+        except Exception:
             pass
