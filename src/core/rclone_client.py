@@ -24,8 +24,12 @@ class RcloneClient:
                         text = await resp.text()
                         self.logger.error(f"Rclone API Error ({resp.status}): {text}")
                         return {"error": text, "status": resp.status}
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
+            # Silently log connection failures without traceback, as they are expected during startup
+            self.logger.debug(f"Daemon not reachable yet at {url}")
+            return {"error": "connection_failed"}
         except Exception as e:
-            self.logger.exception(f"Connection failed to {url}")
+            self.logger.exception(f"Unexpected connection error to {url}")
             return {"error": str(e)}
 
     async def version(self):
