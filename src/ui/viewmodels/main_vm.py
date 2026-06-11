@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication
 import logging
+import os
 from core.config import Config
 from core.mount_worker import MountWorker
 from core.status_worker import StatusWorker
