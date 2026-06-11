@@ -11,17 +11,17 @@ from core.notifications import NotificationManager
 
 class SyncViewModel(QObject):
     tasksChanged = pyqtSignal()
-    logReceived = pyqtSignal(int, str, arguments=['taskId', 'logLine']) # Signal for QML: taskId, line
+    logReceived = pyqtSignal(int, str) # taskId, line
 
     def __init__(self, sync_manager: SyncManager, rclone_client: RcloneClient):
         super().__init__()
         self._manager = sync_manager
         self._client = rclone_client
         self.logger = logging.getLogger(__name__)
-        self._active_workers = {} # task_id -> worker
-        self._task_logs = {} # task_id -> list of strings
+        self._active_workers: dict[int, SyncWorker] = {}
+        self._task_logs: dict[int, list[str]] = {}
 
-    @pyqtSlot(int, result=str)
+    @pyqtSlot(int, result="QString")
     def get_task_logs(self, task_id):
         """Devuelve todos los logs acumulados para una tarea como un solo string."""
         return "\n".join(self._task_logs.get(task_id, []))
@@ -96,7 +96,7 @@ class SyncViewModel(QObject):
 
         # Empty check is crucial for 'sync' (Backup): Empty local means DELETE REMOTE.
         if strategy == "sync" and not os.listdir(local):
-            self._on_sync_error(task_id, f"SAFETY: Local folder is empty. This would wipe the remote (Backup). Aborting.")
+            self._on_sync_error(task_id, "SAFETY: Local folder is empty. This would wipe the remote (Backup). Aborting.")
             return
 
         # Construir Comando Basico
@@ -149,7 +149,7 @@ class SyncViewModel(QObject):
         worker.start()
 
     def _on_sync_log(self, task_id, line):
-        """Slot interno para recibir logs del worker."""
+        """pyqtSlot interno para recibir logs del worker."""
         if task_id not in self._task_logs:
             self._task_logs[task_id] = []
 
@@ -170,7 +170,7 @@ class SyncViewModel(QObject):
         for task in self._manager.get_tasks():
             self.run_sync(task["id"])
 
-    @pyqtSlot(result=str)
+    @pyqtSlot(result="QString")
     def select_local_folder(self):
         """Abre un diálogo nativo Qt para seleccionar carpeta."""
         folder = QFileDialog.getExistingDirectory(None, "Select Local Folder")

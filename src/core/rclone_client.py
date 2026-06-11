@@ -1,6 +1,5 @@
 import aiohttp
 import asyncio
-import json
 import logging
 
 class RcloneClient:

@@ -1,5 +1,5 @@
 import asyncio
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, QTimer
 import logging
 import datetime
 
@@ -34,7 +34,7 @@ class ActivityViewModel(QObject):
              stats = loop.run_until_complete(self._client.core_stats())
              loop.close()
              self._update_live_transfers(stats)
-        except Exception as e:
+        except Exception:
              # Just logging debug to avoid flooding if rclone is busy/off
              # self.logger.debug(f"Stats poll error: {e}") 
              pass
@@ -77,7 +77,8 @@ class ActivityViewModel(QObject):
         # self.logger.debug(f"Active: {len(seen_active_names)}, Syncing in UI: {transferring_count}")
 
     def _process_stats_list(self, items_list, is_active):
-        if not items_list: return
+        if not items_list:
+            return
         
         changed = False
         for t in items_list:
@@ -194,11 +195,16 @@ class ActivityViewModel(QObject):
 
     def _guess_type(self, filename):
         ext = filename.split(".")[-1].lower() if "." in filename else ""
-        if ext in ["jpg", "png", "jpeg", "gif", "bmp"]: return "image-x-generic"
-        if ext in ["mp4", "mkv", "avi", "mov"]: return "video-x-generic"
-        if ext in ["mp3", "wav", "flac"]: return "audio-x-generic"
-        if ext in ["pdf", "doc", "docx", "txt", "md"]: return "application-pdf" # Generic doc
-        if ext in ["zip", "rar", "tar", "gz"]: return "package-x-generic"
+        if ext in ["jpg", "png", "jpeg", "gif", "bmp"]:
+            return "image-x-generic"
+        if ext in ["mp4", "mkv", "avi", "mov"]:
+            return "video-x-generic"
+        if ext in ["mp3", "wav", "flac"]:
+            return "audio-x-generic"
+        if ext in ["pdf", "doc", "docx", "txt", "md"]:
+            return "application-pdf"  # Generic doc
+        if ext in ["zip", "rar", "tar", "gz"]:
+            return "package-x-generic"
         return "text-plain"
 
     def _sizeof_fmt(self, num, suffix="B"):

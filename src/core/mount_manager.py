@@ -3,7 +3,6 @@ import subprocess
 import logging
 import asyncio
 from core.config import Config
-from core.notifications import NotificationManager
 
 class MountManager:
     """
@@ -137,13 +136,12 @@ class MountManager:
         except subprocess.CalledProcessError as e:
              self.logger.error(f"Fusermount failed: {e}")
              return False
-        except Exception as e:
+        except Exception:
              self.logger.exception(f"Unmount error for {remote_name}")
              return False
 
     async def _wait_for_job(self, job_id, timeout_sec=30):
         """Polls job status until finished."""
-        import time
         steps = int(timeout_sec / 1.0)
         for i in range(steps):
             job_status = await self._client.job_status(job_id)

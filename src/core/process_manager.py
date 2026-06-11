@@ -110,7 +110,7 @@ class RcloneProcessManager:
             self.logger.info(f"Rclone daemon started (PID: {self.process.pid}). Output piped to rotating logger.")
             time.sleep(2)
             return True
-        except Exception as e:
+        except Exception:
             self.logger.exception("Failed to start rclone daemon")
             return False
 
