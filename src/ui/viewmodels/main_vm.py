@@ -142,10 +142,6 @@ class MainViewModel(QObject):
     def _on_status_worker_finished(self):
         if self._status_worker:
             self._dead_workers.append(self._status_worker)
-            try:
-                self._status_worker.deleteLater()
-            except RuntimeError:
-                pass
             self._status_worker = None
 
     def _cleanup_dead_workers(self):
@@ -214,10 +210,6 @@ class MainViewModel(QObject):
         if key in self._mount_workers:
             worker = self._mount_workers.pop(key)
             self._dead_workers.append(worker)
-            try:
-                worker.deleteLater()
-            except RuntimeError:
-                pass
 
     def _on_mount_success(self, result):
         remote_name = result.get("remote_name")

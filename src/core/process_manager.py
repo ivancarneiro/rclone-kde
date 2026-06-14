@@ -60,7 +60,7 @@ class RcloneProcessManager:
     def _cleanup_port_hogs(self):
         """Mata procesos rclone antiguos que ocupen el puerto configurado."""
         try:
-            pattern = f"rc-addr={self.rc_addr}"
+            pattern = f"rc-addr.*{self.rc_addr}"
             self.logger.info(f"Cleaning up old processes on {self.rc_addr}...")
             subprocess.run(["pkill", "-f", pattern], check=False)
             time.sleep(0.5)
