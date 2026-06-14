@@ -11,8 +11,8 @@ class StatusWorker(QThread):
     data_received = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, rclone_client, mount_manager, sync_manager):
-        super().__init__()
+    def __init__(self, rclone_client, mount_manager, sync_manager, parent=None):
+        super().__init__(parent)
         self.client = rclone_client
         self.mount_manager = mount_manager
         self.sync_manager = sync_manager

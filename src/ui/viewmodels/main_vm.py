@@ -1,3 +1,4 @@
+import os
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication
 import logging
@@ -28,6 +29,7 @@ class MainViewModel(QObject):
         # Workers Activos
         self._status_worker = None
         self._mount_workers = {} # remote_name/action -> worker
+        self._dead_workers = []
 
         # Monitor Timer (Lanza el StatusWorker)
         self._monitor_timer = QTimer(self)
@@ -59,15 +61,23 @@ class MainViewModel(QObject):
             self._monitor_timer.stop()
         
         # No usamos terminate() ya que puede causar ABRT si ocurre en un momento crítico.
-        # En su lugar, simplemente dejamos que se limpien con el proceso.
-        if self._status_worker and self._status_worker.isRunning():
-            self.logger.debug("Waiting for status worker to finish...")
-            self._status_worker.wait(1000)
+        try:
+            if self._status_worker and self._status_worker.isRunning():
+                self.logger.debug("Waiting for status worker to finish...")
+                self._status_worker.wait(1000)
+        except RuntimeError:
+            self._status_worker = None
         
         for name, worker in list(self._mount_workers.items()):
-            if worker.isRunning():
-                self.logger.debug(f"Waiting for mount worker {name} to finish...")
-                worker.wait(1000)
+            try:
+                if worker.isRunning():
+                    self.logger.debug(f"Waiting for mount worker {name} to finish...")
+                    worker.wait(1000)
+            except RuntimeError:
+                pass
+        
+        # Clean up dead workers
+        self._cleanup_dead_workers()
 
     @pyqtProperty(str, constant=True)
     def mount_dir(self):
@@ -117,13 +127,39 @@ class MainViewModel(QObject):
     @pyqtSlot()
     def refresh_remotes(self):
         """Inicia la actualización de estados en segundo plano."""
-        if self._status_worker and self._status_worker.isRunning():
-            return
+        self._cleanup_dead_workers()
+        try:
+            if self._status_worker and self._status_worker.isRunning():
+                return
+        except RuntimeError:
+            self._status_worker = None
             
-        self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager)
+        self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager, self)
         self._status_worker.data_received.connect(self._on_status_data_received)
-        self._status_worker.finished.connect(self._status_worker.deleteLater)
+        self._status_worker.finished.connect(self._on_status_worker_finished)
         self._status_worker.start()
+
+    def _on_status_worker_finished(self):
+        if self._status_worker:
+            self._dead_workers.append(self._status_worker)
+            try:
+                self._status_worker.deleteLater()
+            except RuntimeError:
+                pass
+            self._status_worker = None
+
+    def _cleanup_dead_workers(self):
+        """Reaps dead QThread workers to prevent GC while OS threads are winding down."""
+        still_alive = []
+        for w in self._dead_workers:
+            try:
+                if w.isRunning():
+                    still_alive.append(w)
+                else:
+                    w.deleteLater()
+            except RuntimeError:
+                pass
+        self._dead_workers = still_alive
 
     def _on_status_data_received(self, data):
         """Recibe los datos del worker y actualiza el modelo."""
@@ -160,7 +196,7 @@ class MainViewModel(QObject):
             self._mounting_remotes.add(remote_name)
             self.refresh_remotes() # Update UI state
             
-            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode)
+            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode, parent=self)
             worker.finished_success.connect(self._on_mount_success)
             worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
             
@@ -174,10 +210,14 @@ class MainViewModel(QObject):
             self._on_mount_error(remote_name, str(e))
 
     def _cleanup_mount_worker(self, key):
-        """Remueve el worker del diccionario una vez finalizado."""
+        """Remueve el worker del diccionario una vez finalizado y lo deriva a reap."""
         if key in self._mount_workers:
             worker = self._mount_workers.pop(key)
-            worker.deleteLater()
+            self._dead_workers.append(worker)
+            try:
+                worker.deleteLater()
+            except RuntimeError:
+                pass
 
     def _on_mount_success(self, result):
         remote_name = result.get("remote_name")
@@ -220,7 +260,7 @@ class MainViewModel(QObject):
     @pyqtSlot(str)
     def unmount_remote(self, remote_name):
         self.logger.info(f"Unmounting {remote_name}...")
-        worker = MountWorker(self._mount_manager, remote_name, is_unmount=True)
+        worker = MountWorker(self._mount_manager, remote_name, is_unmount=True, parent=self)
         worker.finished_success.connect(self._on_mount_success)
         worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
         

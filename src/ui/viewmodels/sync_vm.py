@@ -138,7 +138,7 @@ class SyncViewModel(QObject):
         if force_resync and not dry_run:
              self._task_logs[task_id].append("--- AUTO-RECOVERY: Resyncing... ---")
 
-        worker = SyncWorker(cmd)
+        worker = SyncWorker(cmd, self)
 
         # Conectar señales
         worker.finished_success.connect(lambda t_id=task_id: self._on_sync_success(t_id))
