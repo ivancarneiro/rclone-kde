@@ -14,14 +14,12 @@ class MainViewModel(QObject):
     """
     remotesChanged = pyqtSignal()
 
-    def __init__(self, client, settings_manager, sync_manager):
+    def __init__(self, client, settings_manager, sync_manager, mount_manager):
         super().__init__()
         self._client = client
         self._settings_manager = settings_manager
         self._sync_manager = sync_manager
-        
-        from core.mount_manager import MountManager
-        self._mount_manager = MountManager(client)
+        self._mount_manager = mount_manager
         
         self._remotes = []
         self._mounting_remotes = set() 
@@ -29,7 +27,7 @@ class MainViewModel(QObject):
         
         # Workers Activos
         self._status_worker = None
-        self._mount_workers = {} # remote_name -> worker
+        self._mount_workers = {} # remote_name/action -> worker
 
         # Monitor Timer (Lanza el StatusWorker)
         self._monitor_timer = QTimer(self)
@@ -53,6 +51,23 @@ class MainViewModel(QObject):
         if self._window:
             self._window.close()
         QApplication.quit()
+
+    def stop(self):
+        """Detiene timers y workers para un cierre limpio."""
+        self.logger.info("Stopping MainViewModel background tasks...")
+        if hasattr(self, '_monitor_timer'):
+            self._monitor_timer.stop()
+        
+        # No usamos terminate() ya que puede causar ABRT si ocurre en un momento crítico.
+        # En su lugar, simplemente dejamos que se limpien con el proceso.
+        if self._status_worker and self._status_worker.isRunning():
+            self.logger.debug("Waiting for status worker to finish...")
+            self._status_worker.wait(1000)
+        
+        for name, worker in list(self._mount_workers.items()):
+            if worker.isRunning():
+                self.logger.debug(f"Waiting for mount worker {name} to finish...")
+                worker.wait(1000)
 
     @pyqtProperty(str, constant=True)
     def mount_dir(self):
@@ -107,6 +122,7 @@ class MainViewModel(QObject):
             
         self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager)
         self._status_worker.data_received.connect(self._on_status_data_received)
+        self._status_worker.finished.connect(self._status_worker.deleteLater)
         self._status_worker.start()
 
     def _on_status_data_received(self, data):
@@ -148,11 +164,20 @@ class MainViewModel(QObject):
             worker.finished_success.connect(self._on_mount_success)
             worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
             
+            # Cleanup on finish
+            worker.finished.connect(lambda: self._cleanup_mount_worker(remote_name))
+            
             self._mount_workers[remote_name] = worker
             worker.start()
         except Exception as e:
             self.logger.exception(f"Error initiating mount: {e}")
             self._on_mount_error(remote_name, str(e))
+
+    def _cleanup_mount_worker(self, key):
+        """Remueve el worker del diccionario una vez finalizado."""
+        if key in self._mount_workers:
+            worker = self._mount_workers.pop(key)
+            worker.deleteLater()
 
     def _on_mount_success(self, result):
         remote_name = result.get("remote_name")
@@ -198,6 +223,12 @@ class MainViewModel(QObject):
         worker = MountWorker(self._mount_manager, remote_name, is_unmount=True)
         worker.finished_success.connect(self._on_mount_success)
         worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
+        
+        key = f"unmount_{remote_name}"
+        worker.finished.connect(lambda: self._cleanup_mount_worker(key))
+        
+        # Guardamos referencia para evitar GC y ABRT
+        self._mount_workers[key] = worker
         worker.start()
 
     # ------------------------------------------------------------------

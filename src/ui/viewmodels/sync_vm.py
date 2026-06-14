@@ -144,6 +144,7 @@ class SyncViewModel(QObject):
         worker.finished_success.connect(lambda t_id=task_id: self._on_sync_success(t_id))
         worker.finished_error.connect(lambda msg, t_id=task_id: self._on_sync_error(t_id, msg))
         worker.output_log.connect(lambda line, t_id=task_id: self._on_sync_log(t_id, line))
+        worker.finished.connect(lambda: self._cleanup_worker(task_id))
 
         self._active_workers[task_id] = worker
         worker.start()
@@ -215,3 +216,9 @@ class SyncViewModel(QObject):
             w.quit()
             w.wait()
             w.deleteLater()
+
+    def stop(self):
+        """Detiene todos los workers de sincronización activos."""
+        self.logger.info("Stopping SyncViewModel workers...")
+        for task_id in list(self._active_workers.keys()):
+            self._cleanup_worker(task_id)

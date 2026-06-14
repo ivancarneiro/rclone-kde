@@ -365,3 +365,10 @@ class SettingsViewModel(QObject):
         self.logger.info(f"Saving KeePassXC config: {remote} -> {db_path}")
         self._settings_manager.set_keepassxc_config(remote, db_path)
         self.settingsChanged.emit()
+
+    def stop(self):
+        """Detiene threads del keyring activos."""
+        self.logger.info("Stopping SettingsViewModel tasks...")
+        if self._keyring_thread and self._keyring_thread.isRunning():
+            self._keyring_thread.quit()
+            self._keyring_thread.wait()

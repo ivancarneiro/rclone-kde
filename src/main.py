@@ -87,15 +87,17 @@ def main():
     if not pm.start_daemon():
         print("Warning: Could not start rclone daemon. Is rclone installed?")
 
+    # Initialize Backend Services (Single instances)
     client = RcloneClient(
         url=Config.get_rc_url(),
         user=Config.RC_USER,
         password=rc_password
     )
-
     sync_manager = SyncManager()
     settings_manager = SettingsManager()
     autostart_manager = AutostartManager()
+    mm = MountManager(client)
+    mm.cleanup_all()
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -111,7 +113,7 @@ def main():
         logging.info("Startup flag --minimized detected.")
 
     # ViewModels
-    main_vm = MainViewModel(client, settings_manager, sync_manager)
+    main_vm = MainViewModel(client, settings_manager, sync_manager, mm)
     wizard_vm = WizardViewModel(client, settings_manager, autostart_manager)
     sync_vm = SyncViewModel(sync_manager, client)
     settings_vm = SettingsViewModel(settings_manager, client, autostart_manager)
@@ -151,21 +153,30 @@ def main():
     else:
         root_window.show()
 
-    # Trigger Sync All
+    # Trigger Sync All (After VMs and cleanup)
     sync_vm.sync_all_on_startup()
 
-    # Initialize Mount Manager for global cleanup
-    mm = MountManager(client)
-    mm.cleanup_all()
-
     # Cleanup on exit
-    def cleanup(*args):
-        mm.cleanup_all()
-        pm.stop_daemon()
-        app.quit()
+    def final_cleanup():
+        logging.info("--- Starting final cleanup ---")
+        try:
+            # 1. Stop UI background tasks (timers, workers)
+            # No usamos terminate() para evitar ABRT
+            main_vm.stop()
+            sync_vm.stop()
+            settings_vm.stop()
+            
+            # 2. Cleanup Mounts (Now uses the same instance that started them)
+            mm.cleanup_all()
+            
+            # 3. Stop Rclone Daemon
+            pm.stop_daemon()
+        except Exception as e:
+            logging.error(f"Error during final cleanup: {e}")
+        logging.info("--- Cleanup complete ---")
 
-    signal.signal(signal.SIGINT, cleanup)
-    app.aboutToQuit.connect(pm.stop_daemon)
+    signal.signal(signal.SIGINT, lambda *args: app.quit())
+    app.aboutToQuit.connect(final_cleanup)
 
     return app.exec()
 
