@@ -22,15 +22,9 @@ Page {
             anchors.fill: parent
             ToolButton {
                 text: "Back"
-                onClicked: StackView.view.pop()
+                onClicked: stackView.pop()
             }
-            Label {
-                text: root.title
-                elide: Text.ElideRight
-                horizontalAlignment: Qt.AlignHCenter
-                verticalAlignment: Qt.AlignVCenter
-                Layout.fillWidth: true
-            }
+            Item { Layout.fillWidth: true }
         }
     }
 
@@ -181,6 +175,7 @@ Page {
                 radius: 6
                 Layout.fillWidth: true
                 height: credEditor.expanded ? 220 : 0
+                Layout.preferredHeight: height
                 clip: true
                 property bool expanded: false
 
@@ -377,7 +372,7 @@ Page {
             ListView {
                 id: remotesList
                 Layout.fillWidth: true
-                Layout.fillHeight: true
+                Layout.preferredHeight: contentHeight
                 clip: true
                 model: settingsViewModel.remotes_settings_model
 
@@ -394,6 +389,29 @@ Page {
                             color: "white"
                             font.pixelSize: 14
                             Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: "Sync Mode:"
+                            color: "#AAA"
+                            font.pixelSize: 12
+                        }
+
+                        ComboBox {
+                            currentIndex: {
+                                var val = modelData.sync_strategy || "bisync"
+                                if (val === "bisync") return 0
+                                if (val === "sync") return 1
+                                if (val === "copy") return 2
+                                return 0
+                            }
+                            model: ["Bidirectional", "Backup", "Download"]
+                            onActivated: function(index) {
+                                var str = "bisync"
+                                if (index === 1) str = "sync"
+                                if (index === 2) str = "copy"
+                                settingsViewModel.set_sync_strategy(modelData.name, str)
+                            }
                         }
 
                         Switch {
