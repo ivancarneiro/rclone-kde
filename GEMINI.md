@@ -6,6 +6,7 @@
 - **Merge a master**: Solo mediante Pull Request (PR) real (`gh pr create`).
 - **Integridad**: NUNCA desactivar la protección de la rama `master` en GitHub/GitLab. La sincronización debe ser un proceso de revisión y aprobación formal, incluso si es por nosotros mismos.
 - **Validación**: Mandatorio ejecutar `uv run pytest` en `staging` antes de abrir un PR a `master`.
+- **Commits atómicos y preventivos**: Tras finalizar y probar los cambios de una funcionalidad (feature), se deben commitear inmediatamente a `staging` antes de iniciar el desarrollo de un feature o corregir un problema diferente. Evitar acumular múltiples cambios inconexos sin commit.
 
 ## Convenciones de Desarrollo
 - **Commits**: Seguir [Conventional Commits](https://www.conventionalcommits.org/) (ej: `fix(mount): ...`, `docs: ...`).
