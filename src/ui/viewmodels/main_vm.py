@@ -134,7 +134,7 @@ class MainViewModel(QObject):
         except RuntimeError:
             self._status_worker = None
             
-        self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager, self)
+        self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager, self._settings_manager, self)
         self._status_worker.data_received.connect(self._on_status_data_received)
         self._status_worker.finished.connect(self._on_status_worker_finished)
         self._status_worker.start()
