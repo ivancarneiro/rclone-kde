@@ -121,6 +121,7 @@ class SyncViewModel(QObject):
             "--verbose",
             "--config", Config.RCLONE_CONF,
             "--drive-acknowledge-abuse",
+            "--drive-import-formats", "docx,xlsx,pptx",
             "--max-size", "1G"
         ])
 
