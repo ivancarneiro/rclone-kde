@@ -108,6 +108,8 @@ class MountManager:
             "--volname", remote_name,
             "--no-modtime",
             "--max-size", "1G",
+            "--drive-import-formats", "docx,xlsx,pptx",
+            "--drive-acknowledge-abuse",
             "--config", Config.RCLONE_CONF
         ]
         
