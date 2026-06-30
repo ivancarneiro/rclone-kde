@@ -230,8 +230,14 @@ class MainViewModel(QObject):
                 if os.path.exists(db_path):
                     self.logger.info(f"Launching KeePassXC with DB: {db_path}")
                     import subprocess
-                    subprocess.Popen(["keepassxc", db_path])
-                    NotificationManager.send("KeePassXC", "Database loaded automatically.")
+                    try:
+                        subprocess.Popen(["keepassxc", db_path])
+                        NotificationManager.send("KeePassXC", "Database loaded automatically.")
+                    except FileNotFoundError:
+                        self.logger.error("KeePassXC executable not found in PATH.")
+                        NotificationManager.send("KeePassXC Error", "KeePassXC is not installed or not in PATH.", urgency="critical")
+                    except Exception as e:
+                        self.logger.exception(f"Failed to launch KeePassXC: {e}")
                 else:
                     self.logger.warning(f"KeePassXC DB not found at {db_path}")
 
