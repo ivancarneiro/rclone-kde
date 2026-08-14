@@ -168,8 +168,8 @@ class MainViewModel(QObject):
                 
             self.remotesChanged.emit()
             
-            # Procesar auto-montaje una sola vez
-            if not self._initial_load_done:
+            # Procesar auto-montaje una sola vez (cuando hay remotos disponibles)
+            if not self._initial_load_done and self._remotes:
                 self._initial_load_done = True
                 self._process_auto_mounts()
         except Exception as e:
@@ -177,22 +177,24 @@ class MainViewModel(QObject):
 
     def _process_auto_mounts(self):
         auto_mounts = self._settings_manager.get_auto_mounts()
+        self.logger.info(f"Processing auto mounts: {auto_mounts}")
         for remote in self._remotes:
             name = remote['name']
             if name in auto_mounts and not remote['is_mounted']:
-                self.mount_remote(name)
+                self.logger.info(f"Auto-mounting remote: {name}")
+                self.mount_remote(name, is_auto_mount=True)
 
     @pyqtSlot(str, bool, bool)
-    def mount_remote(self, remote_name, read_only=False, network_mode=False):
+    def mount_remote(self, remote_name, read_only=False, network_mode=False, is_auto_mount=False):
         try:
             if remote_name in self._mounting_remotes:
                 return
             
-            self.logger.info(f"Mounting {remote_name}...")
+            self.logger.info(f"Mounting {remote_name} (is_auto_mount={is_auto_mount})...")
             self._mounting_remotes.add(remote_name)
             self.refresh_remotes() # Update UI state
             
-            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode, parent=self)
+            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode, is_auto_mount=is_auto_mount, parent=self)
             worker.finished_success.connect(self._on_mount_success)
             worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
             
@@ -241,9 +243,10 @@ class MainViewModel(QObject):
                 else:
                     self.logger.warning(f"KeePassXC DB not found at {db_path}")
 
-            # Abrir Dolphin
-            import subprocess
-            subprocess.Popen(["xdg-open", result.get("mount_point")])
+            # Abrir Dolphin solo si fue un montaje manual (no auto-montaje)
+            if not result.get("is_auto_mount"):
+                import subprocess
+                subprocess.Popen(["xdg-open", result.get("mount_point")])
         
         self.refresh_remotes()
 

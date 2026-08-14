@@ -4,6 +4,12 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-08-14
+### Fixed
+- **Inicio automático (Autostart)**: Restaurado el archivo `.desktop` en `~/.config/autostart/rclone-gui-manager.desktop` apuntando a `start.sh --minimized`.
+- **Resiliencia de Auto-Montaje**: Corregido problema donde la carga inicial con remotos vacíos desactivaba prematuramente la rutina de auto-montaje (`_initial_load_done`). Ahora espera a que los remotos estén disponibles.
+- **Montaje silencioso en inicio auto**: Se evita la apertura emergente del gestor de archivos (Dolphin) durante el auto-montaje al iniciar el sistema.
+
 ## [1.3.1] - 2026-06-09
 ### Added
 - **Integración con KeePassXC**: Lanzamiento automático de la base de datos al montar una unidad virtual.

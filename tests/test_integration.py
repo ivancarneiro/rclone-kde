@@ -63,3 +63,32 @@ def test_main_vm_os_module_fix():
             # Esta llamada fallaba antes por el NameError en 'os.path.join'
             vm._on_mount_success(result)
             # Si llegamos aquí, el NameError está corregido
+
+def test_auto_mount_wait_until_remotes_loaded():
+    """Verifica que el auto-montaje no se desactive prematuramente si el primer fetch retorna una lista vacía."""
+    mock_client = MagicMock()
+    mock_settings = MagicMock()
+    mock_sync = MagicMock()
+    mock_mount = MagicMock()
+    
+    mock_settings.get_auto_mounts.return_value = ["drive1"]
+
+    with patch('ui.viewmodels.main_vm.Config'), \
+         patch('ui.viewmodels.main_vm.MountWorker'), \
+         patch('ui.viewmodels.main_vm.StatusWorker'), \
+         patch('ui.viewmodels.main_vm.NotificationManager'):
+        
+        vm = MainViewModel(mock_client, mock_settings, mock_sync, mock_mount)
+        vm.mount_remote = MagicMock()
+
+        # 1. First fetch returns empty remotes list (daemon loading)
+        vm._on_status_data_received([])
+        assert not vm._initial_load_done
+        vm.mount_remote.assert_not_called()
+
+        # 2. Second fetch returns populated remotes list
+        remotes_data = [{"name": "drive1", "is_mounted": False}]
+        vm._on_status_data_received(remotes_data)
+        assert vm._initial_load_done
+        vm.mount_remote.assert_called_once_with("drive1", is_auto_mount=True)
+

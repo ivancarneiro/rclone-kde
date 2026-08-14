@@ -236,3 +236,10 @@ cd rclone-kde
 ```
 
 Ver [**Manual de Usuario (WALKTHROUGH.md)**](WALKTHROUGH.md) para una guía completa paso a paso.
+
+---
+
+## 🛠️ Bug Fixes
+
+- **Inicio Automático con el Sistema**: Restaurada la entrada `.desktop` en `~/.config/autostart/rclone-gui-manager.desktop` para garantizar el inicio de `rclone-kde` con la sesión del sistema en modo minimizado.
+- **Resiliencia en Auto-Montaje de Unidades Virtuales**: Corregida la condición de carrera en `MainViewModel` donde la verificación inicial vacía marcaba la carga inicial como terminada (`_initial_load_done`), evitando que el auto-montaje se ejecutara cuando los remotos terminaban de cargar. Ahora el auto-montaje aguarda a la presencia de remotos y se ejecuta de forma silenciosa sin abrir ventanas de Dolphin no deseadas al iniciar el sistema.

@@ -375,6 +375,7 @@ Page {
                 Layout.preferredHeight: contentHeight
                 clip: true
                 model: settingsViewModel.remotes_settings_model
+                visible: count > 0
 
                 delegate: Item {
                     width: parent.width
@@ -429,6 +430,13 @@ Page {
                         color: "#333"
                     }
                 }
+            }
+
+            Label {
+                text: "No drives configured yet. Add one from the Dashboard."
+                color: "#666"
+                font.pixelSize: 12
+                visible: remotesList.count === 0
             }
         }
     }
