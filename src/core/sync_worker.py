@@ -11,8 +11,8 @@ class SyncWorker(QThread):
     finished_error = pyqtSignal(str) # mensaje de error
     output_log = pyqtSignal(str)     # para logs en tiempo real (stdout/stderr)
 
-    def __init__(self, command):
-        super().__init__()
+    def __init__(self, command, parent=None):
+        super().__init__(parent)
         self.command = command
         self.logger = logging.getLogger(__name__)
 

@@ -34,13 +34,14 @@ def test_main_vm_os_module_fix():
     mock_client = MagicMock()
     mock_settings = MagicMock()
     mock_sync = MagicMock()
+    mock_mount = MagicMock()
     
     with patch('ui.viewmodels.main_vm.Config'), \
          patch('ui.viewmodels.main_vm.MountWorker'), \
          patch('ui.viewmodels.main_vm.StatusWorker'), \
          patch('ui.viewmodels.main_vm.NotificationManager'):
         
-        vm = MainViewModel(mock_client, mock_settings, mock_sync)
+        vm = MainViewModel(mock_client, mock_settings, mock_sync, mock_mount)
         # Si el error NameError: 'os' no está definido persiste, esto fallará
         # al intentar ejecutar _on_mount_success
         

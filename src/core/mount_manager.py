@@ -12,6 +12,7 @@ class MountManager:
     def __init__(self, client):
         self._client = client
         self.logger = logging.getLogger(__name__)
+        self._processes = {} # remote_name -> Popen object
 
     def get_mount_point(self, remote_name):
         return os.path.join(Config.mount_dir, remote_name)
@@ -50,25 +51,38 @@ class MountManager:
             self.logger.warning(f"Cleanup zombie failed for {mount_point}: {e}")
 
     def cleanup_all(self):
-        """Force unmounts everything in the Config.mount_dir"""
+        """Terminates all managed rclone processes and force unmounts everything."""
+        self.logger.info("Performing global mount cleanup...")
+        
+        # 1. Terminate tracked processes
+        for remote_name, process in list(self._processes.items()):
+            try:
+                self.logger.info(f"Terminating rclone process for {remote_name}...")
+                process.terminate()
+                process.wait(timeout=2)
+            except Exception:
+                try: process.kill()
+                except: pass
+        self._processes.clear()
+
+        # 2. Force unmount remaining paths in mount_dir
         mount_dir = Config.mount_dir
         if not os.path.exists(mount_dir):
             return
             
-        self.logger.info(f"Performing global mount cleanup in {mount_dir}...")
         try:
             for item in os.listdir(mount_dir):
                 path = os.path.join(mount_dir, item)
                 if os.path.isdir(path):
-                    self.logger.info(f"Cleaning up {path}...")
+                    self.logger.info(f"Force unmounting {path}...")
                     subprocess.run(["fusermount", "-uz", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as e:
             self.logger.error(f"Global cleanup failed: {e}")
 
     async def mount_remote(self, remote_name, read_only=False, network_mode=False):
         """
-        Mounts a remote using direct subprocess with exclusions for heavy files.
-        This bypasses RC API timeouts and ensures .img/.iso are never processed.
+        Mounts a remote using direct subprocess.
+        Bypasses --daemon to keep the process linked to the application.
         """
         mount_point = self.get_mount_point(remote_name)
         
@@ -94,43 +108,55 @@ class MountManager:
             "--volname", remote_name,
             "--no-modtime",
             "--max-size", "1G",
-            "--daemon",
+            "--drive-acknowledge-abuse",
             "--config", Config.RCLONE_CONF
         ]
         
         if read_only:
             cmd.append("--read-only")
 
-        self.logger.info(f"Executing direct mount: {' '.join(cmd)}")
+        self.logger.info(f"Executing managed mount: {' '.join(cmd)}")
         try:
-            # Usamos Popen para lanzar rclone al fondo
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            # Redirigimos stdout a DEVNULL y stderr a PIPE para capturar errores de inicio
+            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            self._processes[remote_name] = process
             
             # Verificación por polling (máximo 30 segundos)
             for i in range(30):
-                await asyncio.sleep(1.0) # Uso asyncio.sleep porque estamos en un método async
+                await asyncio.sleep(1.0) 
                 if self.is_mounted_system(mount_point):
                     self.logger.info(f"Mount confirmed for {remote_name} after {i+1}s")
                     return {"success": True, "mount_point": mount_point, "remote_name": remote_name}
                 
-                # Si el proceso murió rápido, hubo un error de rclone
+                # Si el proceso murió, capturamos el error
                 if process.poll() is not None:
-                    _, stderr = process.communicate()
+                    stderr = process.stderr.read()
                     self.logger.error(f"Rclone mount process exited early: {stderr}")
-                    return {"success": False, "error": stderr}
+                    if remote_name in self._processes: del self._processes[remote_name]
+                    return {"success": False, "error": stderr.strip() or "Process exited without output"}
 
             return {"success": False, "error": "El montaje se lanzó pero no aparece en el sistema (Timeout 30s)"}
         except Exception as e:
-            self.logger.exception(f"Direct mount exception for {remote_name}")
+            self.logger.exception(f"Managed mount exception for {remote_name}")
             return {"success": False, "error": str(e)}
 
     async def unmount_remote(self, remote_name):
-        """Unmounts a remote cleanly."""
+        """Unmounts a remote cleanly by terminating the process."""
         mount_point = self.get_mount_point(remote_name)
         self.logger.info(f"Unmounting {remote_name}...")
         
+        # 1. Terminate process if tracked
+        if remote_name in self._processes:
+            try:
+                self._processes[remote_name].terminate()
+                self._processes[remote_name].wait(timeout=5)
+            except Exception:
+                try: self._processes[remote_name].kill()
+                except: pass
+            del self._processes[remote_name]
+
+        # 2. Ensure system unmount
         try:
-             # Force unmount (lazy)
              subprocess.run(["fusermount", "-uz", mount_point], check=True)
              return True
         except subprocess.CalledProcessError as e:

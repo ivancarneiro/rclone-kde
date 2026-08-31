@@ -15,7 +15,8 @@ class SettingsManager:
             "auto_mounts": [],
             "start_minimized": False,
             "keepassxc_remote": "",
-            "keepassxc_db_path": ""
+            "keepassxc_db_path": "",
+            "sync_strategies": {}
         }
         self.load_settings()
 
@@ -60,6 +61,15 @@ class SettingsManager:
             self.add_auto_mount(remote_name)
         else:
             self.remove_auto_mount(remote_name)
+
+    def get_sync_strategy(self, remote_name):
+        return self._settings.get("sync_strategies", {}).get(remote_name, "bisync")
+
+    def set_sync_strategy(self, remote_name, strategy):
+        strategies = self._settings.get("sync_strategies", {})
+        strategies[remote_name] = strategy
+        self._settings["sync_strategies"] = strategies
+        self.save_settings()
 
     def get_start_minimized(self):
         return self._settings.get("start_minimized", False)

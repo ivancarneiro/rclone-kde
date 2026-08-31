@@ -10,8 +10,8 @@ class MountWorker(QThread):
     finished_success = pyqtSignal(dict)
     finished_error = pyqtSignal(str)
 
-    def __init__(self, mount_manager, remote_name, read_only=False, network_mode=False, is_unmount=False):
-        super().__init__()
+    def __init__(self, mount_manager, remote_name, read_only=False, network_mode=False, is_unmount=False, parent=None):
+        super().__init__(parent)
         self.mount_manager = mount_manager
         self.remote_name = remote_name
         self.read_only = read_only

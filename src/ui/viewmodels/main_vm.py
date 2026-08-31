@@ -1,3 +1,4 @@
+import os
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtProperty, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication
 import logging
@@ -14,14 +15,12 @@ class MainViewModel(QObject):
     """
     remotesChanged = pyqtSignal()
 
-    def __init__(self, client, settings_manager, sync_manager):
+    def __init__(self, client, settings_manager, sync_manager, mount_manager):
         super().__init__()
         self._client = client
         self._settings_manager = settings_manager
         self._sync_manager = sync_manager
-        
-        from core.mount_manager import MountManager
-        self._mount_manager = MountManager(client)
+        self._mount_manager = mount_manager
         
         self._remotes = []
         self._mounting_remotes = set() 
@@ -29,7 +28,8 @@ class MainViewModel(QObject):
         
         # Workers Activos
         self._status_worker = None
-        self._mount_workers = {} # remote_name -> worker
+        self._mount_workers = {} # remote_name/action -> worker
+        self._dead_workers = []
 
         # Monitor Timer (Lanza el StatusWorker)
         self._monitor_timer = QTimer(self)
@@ -53,6 +53,31 @@ class MainViewModel(QObject):
         if self._window:
             self._window.close()
         QApplication.quit()
+
+    def stop(self):
+        """Detiene timers y workers para un cierre limpio."""
+        self.logger.info("Stopping MainViewModel background tasks...")
+        if hasattr(self, '_monitor_timer'):
+            self._monitor_timer.stop()
+        
+        # No usamos terminate() ya que puede causar ABRT si ocurre en un momento crítico.
+        try:
+            if self._status_worker and self._status_worker.isRunning():
+                self.logger.debug("Waiting for status worker to finish...")
+                self._status_worker.wait(1000)
+        except RuntimeError:
+            self._status_worker = None
+        
+        for name, worker in list(self._mount_workers.items()):
+            try:
+                if worker.isRunning():
+                    self.logger.debug(f"Waiting for mount worker {name} to finish...")
+                    worker.wait(1000)
+            except RuntimeError:
+                pass
+        
+        # Clean up dead workers
+        self._cleanup_dead_workers()
 
     @pyqtProperty(str, constant=True)
     def mount_dir(self):
@@ -102,12 +127,35 @@ class MainViewModel(QObject):
     @pyqtSlot()
     def refresh_remotes(self):
         """Inicia la actualización de estados en segundo plano."""
-        if self._status_worker and self._status_worker.isRunning():
-            return
+        self._cleanup_dead_workers()
+        try:
+            if self._status_worker and self._status_worker.isRunning():
+                return
+        except RuntimeError:
+            self._status_worker = None
             
-        self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager)
+        self._status_worker = StatusWorker(self._client, self._mount_manager, self._sync_manager, self._settings_manager, self)
         self._status_worker.data_received.connect(self._on_status_data_received)
+        self._status_worker.finished.connect(self._on_status_worker_finished)
         self._status_worker.start()
+
+    def _on_status_worker_finished(self):
+        if self._status_worker:
+            self._dead_workers.append(self._status_worker)
+            self._status_worker = None
+
+    def _cleanup_dead_workers(self):
+        """Reaps dead QThread workers to prevent GC while OS threads are winding down."""
+        still_alive = []
+        for w in self._dead_workers:
+            try:
+                if w.isRunning():
+                    still_alive.append(w)
+                else:
+                    w.deleteLater()
+            except RuntimeError:
+                pass
+        self._dead_workers = still_alive
 
     def _on_status_data_received(self, data):
         """Recibe los datos del worker y actualiza el modelo."""
@@ -144,15 +192,24 @@ class MainViewModel(QObject):
             self._mounting_remotes.add(remote_name)
             self.refresh_remotes() # Update UI state
             
-            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode)
+            worker = MountWorker(self._mount_manager, remote_name, read_only, network_mode, parent=self)
             worker.finished_success.connect(self._on_mount_success)
             worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
+            
+            # Cleanup on finish
+            worker.finished.connect(lambda: self._cleanup_mount_worker(remote_name))
             
             self._mount_workers[remote_name] = worker
             worker.start()
         except Exception as e:
             self.logger.exception(f"Error initiating mount: {e}")
             self._on_mount_error(remote_name, str(e))
+
+    def _cleanup_mount_worker(self, key):
+        """Remueve el worker del diccionario una vez finalizado y lo deriva a reap."""
+        if key in self._mount_workers:
+            worker = self._mount_workers.pop(key)
+            self._dead_workers.append(worker)
 
     def _on_mount_success(self, result):
         remote_name = result.get("remote_name")
@@ -173,8 +230,14 @@ class MainViewModel(QObject):
                 if os.path.exists(db_path):
                     self.logger.info(f"Launching KeePassXC with DB: {db_path}")
                     import subprocess
-                    subprocess.Popen(["keepassxc", db_path])
-                    NotificationManager.send("KeePassXC", "Database loaded automatically.")
+                    try:
+                        subprocess.Popen(["keepassxc", db_path])
+                        NotificationManager.send("KeePassXC", "Database loaded automatically.")
+                    except FileNotFoundError:
+                        self.logger.error("KeePassXC executable not found in PATH.")
+                        NotificationManager.send("KeePassXC Error", "KeePassXC is not installed or not in PATH.", urgency="critical")
+                    except Exception as e:
+                        self.logger.exception(f"Failed to launch KeePassXC: {e}")
                 else:
                     self.logger.warning(f"KeePassXC DB not found at {db_path}")
 
@@ -195,9 +258,15 @@ class MainViewModel(QObject):
     @pyqtSlot(str)
     def unmount_remote(self, remote_name):
         self.logger.info(f"Unmounting {remote_name}...")
-        worker = MountWorker(self._mount_manager, remote_name, is_unmount=True)
+        worker = MountWorker(self._mount_manager, remote_name, is_unmount=True, parent=self)
         worker.finished_success.connect(self._on_mount_success)
         worker.finished_error.connect(lambda err: self._on_mount_error(remote_name, err))
+        
+        key = f"unmount_{remote_name}"
+        worker.finished.connect(lambda: self._cleanup_mount_worker(key))
+        
+        # Guardamos referencia para evitar GC y ABRT
+        self._mount_workers[key] = worker
         worker.start()
 
     # ------------------------------------------------------------------
