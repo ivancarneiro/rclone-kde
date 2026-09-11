@@ -132,13 +132,7 @@ ApplicationWindow {
                         text: "☰"
                         onClicked: drawer.open()
                     }
-                    Label {
-                        text: "Remotes Dashboard"
-                        elide: Label.ElideRight
-                        horizontalAlignment: Qt.AlignHCenter
-                        verticalAlignment: Qt.AlignVCenter
-                        Layout.fillWidth: true
-                    }
+                    Item { Layout.fillWidth: true }
                 }
             }
             

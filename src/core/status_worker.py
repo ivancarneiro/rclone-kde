@@ -11,11 +11,12 @@ class StatusWorker(QThread):
     data_received = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, rclone_client, mount_manager, sync_manager):
-        super().__init__()
+    def __init__(self, rclone_client, mount_manager, sync_manager, settings_manager, parent=None):
+        super().__init__(parent)
         self.client = rclone_client
         self.mount_manager = mount_manager
         self.sync_manager = sync_manager
+        self.settings_manager = settings_manager
         self.logger = logging.getLogger(__name__)
 
     def run(self):
@@ -91,7 +92,7 @@ class StatusWorker(QThread):
                 "detail": detail_text,
                 "quota": quota_text,
                 "storage_percent": storage_percent,
-                "sync_strategy": self.sync_manager.get_strategy_for_remote(name)
+                "sync_strategy": self.settings_manager.get_sync_strategy(name)
             })
             
         return enriched_remotes

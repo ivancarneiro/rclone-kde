@@ -238,7 +238,8 @@ class SettingsViewModel(QObject):
                 enabled = self._settings_manager.is_auto_mount_enabled(name)
                 enriched.append({
                     "name": name,
-                    "auto_mount": enabled
+                    "auto_mount": enabled,
+                    "sync_strategy": self._settings_manager.get_sync_strategy(name)
                 })
             self._remotes_cache = enriched
             self.settingsChanged.emit()
@@ -348,6 +349,15 @@ class SettingsViewModel(QObject):
                 r["auto_mount"] = enabled
         self.settingsChanged.emit()
 
+    @pyqtSlot(str, str)
+    def set_sync_strategy(self, remote_name, strategy):
+        self.logger.info(f"Setting sync strategy for {remote_name}: {strategy}")
+        self._settings_manager.set_sync_strategy(remote_name, strategy)
+        for r in self._remotes_cache:
+            if r["name"] == remote_name:
+                r["sync_strategy"] = strategy
+        self.settingsChanged.emit()
+
     # ------------------------------------------------------------------
     # KeePassXC Integration
     # ------------------------------------------------------------------
@@ -365,3 +375,10 @@ class SettingsViewModel(QObject):
         self.logger.info(f"Saving KeePassXC config: {remote} -> {db_path}")
         self._settings_manager.set_keepassxc_config(remote, db_path)
         self.settingsChanged.emit()
+
+    def stop(self):
+        """Detiene threads del keyring activos."""
+        self.logger.info("Stopping SettingsViewModel tasks...")
+        if self._keyring_thread and self._keyring_thread.isRunning():
+            self._keyring_thread.quit()
+            self._keyring_thread.wait()

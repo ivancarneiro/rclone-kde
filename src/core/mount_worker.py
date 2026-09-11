@@ -10,13 +10,14 @@ class MountWorker(QThread):
     finished_success = pyqtSignal(dict)
     finished_error = pyqtSignal(str)
 
-    def __init__(self, mount_manager, remote_name, read_only=False, network_mode=False, is_unmount=False):
-        super().__init__()
+    def __init__(self, mount_manager, remote_name, read_only=False, network_mode=False, is_unmount=False, is_auto_mount=False, parent=None):
+        super().__init__(parent)
         self.mount_manager = mount_manager
         self.remote_name = remote_name
         self.read_only = read_only
         self.network_mode = network_mode
         self.is_unmount = is_unmount
+        self.is_auto_mount = is_auto_mount
         self.logger = logging.getLogger(__name__)
 
     def run(self):
@@ -37,6 +38,8 @@ class MountWorker(QThread):
                 result = loop.run_until_complete(
                     self.mount_manager.mount_remote(self.remote_name, self.read_only, self.network_mode)
                 )
+                if isinstance(result, dict):
+                    result["is_auto_mount"] = self.is_auto_mount
                 if result.get("success"):
                     self.finished_success.emit(result)
                 else:
