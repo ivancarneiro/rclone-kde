@@ -46,7 +46,7 @@ impl AutostartManager {
              Name=Rclone GUI Manager\n\
              Comment=Manage and mount Rclone remotes\n\
              Exec={} --minimized\n\
-             Icon=utilities-terminal\n\
+             Icon=rclone-manager\n\
              Hidden=false\n\
              NoDisplay=false\n\
              X-GNOME-Autostart-enabled=true\n",
@@ -88,6 +88,7 @@ mod tests {
 
         let content = fs::read_to_string(mgr.desktop_file_path()).expect("read desktop file");
         assert!(content.contains("Exec=/usr/local/bin/rclone-manager --minimized"));
+        assert!(content.contains("Icon=rclone-manager"));
         assert!(content.contains("X-GNOME-Autostart-enabled=true"));
 
         mgr.disable().expect("disable autostart");
