@@ -44,6 +44,12 @@ Se adopta la mentalidad de Ponytail (`DietrichGebert/ponytail`):
 3. Cero abstracciones o wrappers innecesarios que nadie ha solicitado.
 4. Toda lógica no trivial debe incluir su correspondiente test unitario.
 
+### IX. Política de Rust Puro y Duro (Zero-Python Policy)
+En la rama `feature/rust-migration` y en todo el ciclo de desarrollo de la nueva versión:
+1. Queda estrictamente prohibido agregar, modificar o commitear código o dependencias del stack anterior en Python (`.py`, `pyproject.toml`, `uv.lock`, `requirements.txt`).
+2. El nuevo stack tecnológico debe ser Rust puro y duro, autónomo y compilado.
+3. Esta regla está protegida de manera forzada por el hook `pre-commit`, el cual rechazará automáticamente cualquier archivo de Python en stage.
+
 ## Technology Stack & Constraints
 
 - **Lenguaje:** Rust 1.85+ (Edición 2021 / 2024).

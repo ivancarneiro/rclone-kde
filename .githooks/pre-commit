@@ -7,6 +7,25 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 echo "🔍 [pre-commit] Iniciando auditoría de seguridad y calidad..."
 
 # ------------------------------------------------------------------------------
+# 0. POLÍTICA DE RUST PURO (Cero Python en ramas Rust)
+# ------------------------------------------------------------------------------
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [[ "$CURRENT_BRANCH" =~ rust ]]; then
+    STAGED_PYTHON_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$|uv\.lock|requirements\.txt|pyproject\.toml|\.venv' || true)
+    if [ -n "$STAGED_PYTHON_FILES" ]; then
+        echo "======================================================================"
+        echo "❌ ERROR: Política de Rust Puro y Duro violada."
+        echo "En la rama '$CURRENT_BRANCH' está estrictamente prohibido agregar"
+        echo "o commitear archivos de la versión anterior en Python."
+        echo "----------------------------------------------------------------------"
+        echo "Archivos rechazados en stage:"
+        echo "$STAGED_PYTHON_FILES"
+        echo "======================================================================"
+        exit 1
+    fi
+fi
+
+# ------------------------------------------------------------------------------
 # 1. VERIFICACIÓN DE SECRETOS (gitleaks)
 # ------------------------------------------------------------------------------
 echo "🔐 [1/3] Verificando secretos y credenciales expuestas..."

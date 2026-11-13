@@ -18,6 +18,11 @@ El hook `.githooks/pre-commit` valida automáticamente:
 2. **Sintaxis:** Validación sintáctica de Rust (`cargo fmt`, `cargo check`), Bash (`bash -n`) y Python (`py_compile`).
 3. **CVEs:** `cargo audit` verifica vulnerabilidades en dependencias.
 
+## Política de Rust Puro y Duro (NON-NEGOTIABLE)
+- En la rama `feature/rust-migration` está terminantemente prohibido agregar o commitear archivos de la versión anterior en Python (`.py`, `pyproject.toml`, `uv.lock`, etc.).
+- El pre-commit hook bloquea activamente cualquier commit que contenga archivos Python.
+- El proyecto debe evolucionar como una aplicación Rust 100% nativa.
+
 ## Ponytail Mode (Senior Dev Minimalist Philosophy)
 - El mejor código es el que nunca se escribe.
 - YAGNI estricto: cero wrappers, abstracciones o flexibilidad prematura que nadie ha solicitado.
