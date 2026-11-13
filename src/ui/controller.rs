@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -1495,16 +1495,54 @@ impl AppController {
     }
 
     async fn poll_core_stats(&self, weak: &slint::Weak<AppWindow>) {
-        let Ok(stats) = self.client.core_stats().await else {
-            return;
+        let mount_urls = {
+            let mounts = self.mounts.lock().await;
+            mounts.active_rc_urls()
         };
 
-        let speed_text = format!("{}/s", format_bytes(stats.speed.max(0.0) as u64));
-        let bytes_text = format_bytes(stats.bytes);
+        let mut clients = vec![(self.client.clone(), false)];
+        for url in mount_urls {
+            clients.push((self.client.for_local_rc(&url), true));
+        }
+
+        let mut any_ok = false;
+        let mut total_speed = 0.0_f64;
+        let mut total_bytes = 0_u64;
+        let mut all_transferring = Vec::new();
+        let mut all_vfs_queued = Vec::new();
+        let mut all_transferred = Vec::new();
+
+        for (client, is_mount) in clients {
+            if let Ok(stats) = client.core_stats().await {
+                any_ok = true;
+                total_speed += stats.speed.max(0.0);
+                total_bytes += stats.bytes;
+                all_transferring.extend(stats.transferring);
+                all_transferred.extend(stats.transferred);
+            }
+            if is_mount && let Ok(queue) = client.vfs_queue().await {
+                any_ok = true;
+                all_vfs_queued.extend(queue);
+            }
+            if let Ok(done) = client.core_transferred().await {
+                any_ok = true;
+                all_transferred.extend(done);
+            }
+        }
+
+        if !any_ok {
+            return;
+        }
+
+        let speed_text = format!("{}/s", format_bytes(total_speed.max(0.0) as u64));
+        let bytes_text = format_bytes(total_bytes);
 
         let mut hist = self.activity_history.lock().await;
-        for active in &stats.transferring {
-            if let Some(existing) = hist.iter_mut().find(|i| i.name == active.name) {
+        let mut seen_active_names: HashSet<String> = HashSet::new();
+
+        for active in &all_transferring {
+            seen_active_names.insert(active.name.clone());
+            if let Some(existing) = hist.iter_mut().rev().find(|i| i.name == active.name) {
                 existing.size = format_bytes(active.size);
                 existing.status = "syncing".to_string();
                 existing.progress = active.percentage as f32;
@@ -1520,26 +1558,65 @@ impl AppController {
             }
         }
 
-        for done in &stats.transferred {
+        for queued in &all_vfs_queued {
+            if !seen_active_names.insert(queued.name.clone()) {
+                continue;
+            }
+            let queued_progress = if queued.uploading { 50.0 } else { 15.0 };
+            if let Some(existing) = hist
+                .iter_mut()
+                .rev()
+                .find(|i| i.name == queued.name && i.status == "syncing")
+            {
+                existing.size = format_bytes(queued.size);
+                existing.progress = existing.progress.max(queued_progress);
+            } else {
+                hist.push(ActivityRecord {
+                    name: queued.name.clone(),
+                    item_type: "file".to_string(),
+                    size: format_bytes(queued.size),
+                    status: "syncing".to_string(),
+                    progress: queued_progress,
+                    timestamp: current_utc_hms_timestamp(false),
+                });
+            }
+        }
+
+        for done in &all_transferred {
             let final_status = if done.error.is_empty() {
                 "success"
             } else {
                 "error"
             };
-            if let Some(existing) = hist.iter_mut().find(|i| i.name == done.name) {
+            if let Some(existing) = hist.iter_mut().rev().find(|i| i.name == done.name) {
                 existing.size = format_bytes(done.size);
                 existing.status = final_status.to_string();
                 existing.progress = 100.0;
             } else {
+                let ts = extract_hms_from_rfc3339(&done.completed_at)
+                    .unwrap_or_else(|| current_utc_hms_timestamp(false));
                 hist.push(ActivityRecord {
                     name: done.name.clone(),
                     item_type: "file".to_string(),
                     size: format_bytes(done.size),
                     status: final_status.to_string(),
                     progress: 100.0,
-                    timestamp: current_utc_hms_timestamp(false),
+                    timestamp: ts,
                 });
             }
+        }
+
+        // Mark any previously "syncing" record not seen in active/queue as completed.
+        for item in hist.iter_mut() {
+            if item.status == "syncing" && !seen_active_names.contains(&item.name) {
+                item.status = "success".to_string();
+                item.progress = 100.0;
+            }
+        }
+
+        if hist.len() > 100 {
+            let overflow = hist.len() - 100;
+            hist.drain(0..overflow);
         }
 
         let snapshot: Vec<ActivityRecord> = hist.iter().rev().cloned().collect();
@@ -1626,6 +1703,16 @@ async fn pick_directory(title: &str) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn extract_hms_from_rfc3339(ts: &str) -> Option<String> {
+    let time_part = ts.split('T').nth(1)?;
+    let hms = time_part.get(..8)?;
+    if hms.len() == 8 && hms.as_bytes()[2] == b':' && hms.as_bytes()[5] == b':' {
+        Some(hms.to_string())
+    } else {
+        None
+    }
 }
 
 fn current_utc_hms_timestamp(include_date: bool) -> String {

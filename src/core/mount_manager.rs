@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::time::Duration;
@@ -34,6 +35,7 @@ pub struct MountManager {
     vfs_cache_dir: PathBuf,
     rclone_conf: PathBuf,
     processes: HashMap<String, Child>,
+    rc_urls: HashMap<String, String>,
 }
 
 impl MountManager {
@@ -43,7 +45,12 @@ impl MountManager {
             vfs_cache_dir,
             rclone_conf,
             processes: HashMap::new(),
+            rc_urls: HashMap::new(),
         }
+    }
+
+    pub fn active_rc_urls(&self) -> Vec<String> {
+        self.rc_urls.values().cloned().collect()
     }
 
     pub fn set_mount_root(&mut self, mount_root: PathBuf) {
@@ -188,6 +195,7 @@ impl MountManager {
     pub fn cleanup_all(&mut self) {
         info!("Performing global mount cleanup...");
 
+        self.rc_urls.clear();
         for (remote, mut child) in self.processes.drain() {
             info!("Terminating managed rclone mount for {remote}...");
             let _ = child.start_kill();
@@ -246,7 +254,16 @@ impl MountManager {
         })?;
 
         let rclone_bin = resolve_binary("rclone");
-        let args = self.build_mount_args(remote_name, &mount_point, opts);
+        let mut args = self.build_mount_args(remote_name, &mount_point, opts);
+        let rc_addr = allocate_loopback_rc_addr();
+        if let Some(ref addr) = rc_addr {
+            args.extend([
+                "--rc".to_string(),
+                "--rc-addr".to_string(),
+                addr.clone(),
+                "--rc-no-auth".to_string(),
+            ]);
+        }
         info!("Executing managed mount for {remote_name}");
 
         let mut child = Command::new(rclone_bin)
@@ -266,6 +283,16 @@ impl MountManager {
 
             if Self::is_mounted_system(&mount_point) {
                 info!("Mount confirmed for {remote_name} after {step}s");
+                if let Some(addr) = rc_addr {
+                    self.rc_urls
+                        .insert(remote_name.to_string(), format!("http://{addr}"));
+                }
+                if let Some(mut pipe) = stderr_pipe.take() {
+                    // Drain stderr in background so rclone mount never hits EPIPE.
+                    tokio::spawn(async move {
+                        let _ = tokio::io::copy(&mut pipe, &mut tokio::io::sink()).await;
+                    });
+                }
                 return Ok(MountResult {
                     success: true,
                     already_mounted: false,
@@ -319,6 +346,7 @@ impl MountManager {
         let mount_point = self.get_mount_point(remote_name);
         info!("Unmounting {remote_name}...");
 
+        self.rc_urls.remove(remote_name);
         if let Some(mut child) = self.processes.remove(remote_name) {
             let _ = child.start_kill();
             let _ = timeout(Duration::from_secs(5), child.wait()).await;
@@ -340,6 +368,12 @@ impl MountManager {
             }
         }
     }
+}
+
+fn allocate_loopback_rc_addr() -> Option<String> {
+    let listener = TcpListener::bind("127.0.0.1:0").ok()?;
+    let addr = listener.local_addr().ok()?;
+    Some(addr.to_string())
 }
 
 impl Drop for MountManager {

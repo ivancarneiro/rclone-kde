@@ -55,6 +55,16 @@ pub struct TransferredItem {
     pub completed_at: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VfsQueueItem {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub uploading: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CoreStats {
     #[serde(default)]
@@ -67,6 +77,18 @@ pub struct CoreStats {
     pub transferring: Vec<TransferItem>,
     #[serde(default)]
     pub transferred: Vec<TransferredItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CoreTransferredResponse {
+    #[serde(default)]
+    transferred: Vec<TransferredItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VfsQueueResponse {
+    #[serde(default)]
+    queue: Vec<VfsQueueItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,6 +124,16 @@ impl RcloneClient {
             user: user.to_string(),
             password: password.to_string(),
             http,
+        }
+    }
+
+    /// Clones the HTTP connection pool targeting an unauthenticated loopback RC endpoint.
+    pub fn for_local_rc(&self, base_url: &str) -> Self {
+        Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            user: String::new(),
+            password: String::new(),
+            http: self.http.clone(),
         }
     }
 
@@ -185,6 +217,20 @@ impl RcloneClient {
     pub async fn core_stats(&self) -> Result<CoreStats> {
         let val = self.rc_call("core/stats", None).await?;
         serde_json::from_value(val).context("Failed to parse core/stats response")
+    }
+
+    pub async fn core_transferred(&self) -> Result<Vec<TransferredItem>> {
+        let val = self.rc_call("core/transferred", None).await?;
+        let parsed: CoreTransferredResponse =
+            serde_json::from_value(val).context("Failed to parse core/transferred response")?;
+        Ok(parsed.transferred)
+    }
+
+    pub async fn vfs_queue(&self) -> Result<Vec<VfsQueueItem>> {
+        let val = self.rc_call("vfs/queue", None).await?;
+        let parsed: VfsQueueResponse =
+            serde_json::from_value(val).context("Failed to parse vfs/queue response")?;
+        Ok(parsed.queue)
     }
 
     pub async fn config_create(
@@ -351,6 +397,16 @@ mod tests {
                             "200 OK",
                             r#"{"speed":1024.5,"bytes":4096,"errors":0,"transferring":[{"name":"doc.pdf","size":1000,"bytes":500,"percentage":50.0,"speed":512.0}],"transferred":[]}"#,
                         )
+                    } else if first_line.starts_with("POST /core/transferred ") {
+                        (
+                            "200 OK",
+                            r#"{"transferred":[{"name":"done.txt","size":2048,"bytes":2048,"error":"","completed_at":"2026-11-13T10:50:23.791540462-03:00"}]}"#,
+                        )
+                    } else if first_line.starts_with("POST /vfs/queue ") {
+                        (
+                            "200 OK",
+                            r#"{"queue":[{"name":"queued.bin","size":4096,"uploading":false}]}"#,
+                        )
                     } else {
                         ("404 Not Found", r#"{"error":"not found"}"#)
                     };
@@ -386,6 +442,19 @@ mod tests {
         assert_eq!(stats.bytes, 4096);
         assert_eq!(stats.transferring.len(), 1);
         assert_eq!(stats.transferring[0].name, "doc.pdf");
+
+        let transferred = client.core_transferred().await.expect("core_transferred");
+        assert_eq!(transferred.len(), 1);
+        assert_eq!(transferred[0].name, "done.txt");
+        assert_eq!(transferred[0].size, 2048);
+
+        let queue = client.vfs_queue().await.expect("vfs_queue");
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].name, "queued.bin");
+        assert!(!queue[0].uploading);
+
+        let local = client.for_local_rc(&base_url);
+        assert!(!local.noop().await.expect("local without auth"));
 
         let unauth = RcloneClient::new(&base_url, "", "");
         assert!(!unauth.noop().await.expect("unauth noop"));
