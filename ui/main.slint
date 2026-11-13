@@ -736,7 +736,9 @@ export component AppWindow inherits Window {
                                 }
                                 Text {
                                     text: item.size + " • " + item.status + " • " + item.timestamp;
-                                    color: item.status == "error" ? #ef9a9a : (item.status == "success" ? #81c784 : #88c0d0);
+                                    color: item.status == "error" ? #ef9a9a
+                                        : item.status == "deleted" ? #d08770
+                                        : (item.status == "success" ? #81c784 : #88c0d0);
                                     font-size: 11px;
                                 }
                             }

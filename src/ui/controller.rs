@@ -44,6 +44,7 @@ pub struct AppController {
     task_logs: Arc<Mutex<HashMap<u32, Vec<String>>>>,
     active_sync_tasks: Arc<Mutex<HashMap<u32, JoinHandle<()>>>>,
     activity_history: Arc<Mutex<Vec<ActivityRecord>>>,
+    seen_transferred: Arc<Mutex<HashSet<(String, String)>>>,
     http_google: reqwest::Client,
 }
 
@@ -89,6 +90,7 @@ impl AppController {
             task_logs: Arc::new(Mutex::new(HashMap::new())),
             active_sync_tasks: Arc::new(Mutex::new(HashMap::new())),
             activity_history: Arc::new(Mutex::new(Vec::new())),
+            seen_transferred: Arc::new(Mutex::new(HashSet::new())),
             http_google,
         }
     }
@@ -1537,21 +1539,34 @@ impl AppController {
         let speed_text = format!("{}/s", format_bytes(total_speed.max(0.0) as u64));
         let bytes_text = format_bytes(total_bytes);
 
+        let mut seen = self.seen_transferred.lock().await;
         let mut hist = self.activity_history.lock().await;
         let mut seen_active_names: HashSet<String> = HashSet::new();
 
         for active in &all_transferring {
-            seen_active_names.insert(active.name.clone());
-            if let Some(existing) = hist.iter_mut().rev().find(|i| i.name == active.name) {
-                existing.size = format_bytes(active.size);
-                existing.status = "syncing".to_string();
+            let Some((name, status)) = normalize_activity_entry(&active.name, "syncing") else {
+                continue;
+            };
+            seen_active_names.insert(name.clone());
+            let size_text = if active.name.ends_with(".trashinfo") {
+                "-".to_string()
+            } else {
+                format_bytes(active.size)
+            };
+            if let Some(existing) = hist
+                .iter_mut()
+                .rev()
+                .find(|i| i.name == name && i.status == "syncing")
+            {
+                existing.size = size_text;
+                existing.status = status;
                 existing.progress = active.percentage as f32;
             } else {
                 hist.push(ActivityRecord {
-                    name: active.name.clone(),
+                    name,
                     item_type: "file".to_string(),
-                    size: format_bytes(active.size),
-                    status: "syncing".to_string(),
+                    size: size_text,
+                    status,
                     progress: active.percentage as f32,
                     timestamp: current_utc_hms_timestamp(false),
                 });
@@ -1559,23 +1574,31 @@ impl AppController {
         }
 
         for queued in &all_vfs_queued {
-            if !seen_active_names.insert(queued.name.clone()) {
+            let Some((name, status)) = normalize_activity_entry(&queued.name, "syncing") else {
+                continue;
+            };
+            if !seen_active_names.insert(name.clone()) {
                 continue;
             }
             let queued_progress = if queued.uploading { 50.0 } else { 15.0 };
+            let size_text = if queued.name.ends_with(".trashinfo") {
+                "-".to_string()
+            } else {
+                format_bytes(queued.size)
+            };
             if let Some(existing) = hist
                 .iter_mut()
                 .rev()
-                .find(|i| i.name == queued.name && i.status == "syncing")
+                .find(|i| i.name == name && i.status == "syncing")
             {
-                existing.size = format_bytes(queued.size);
+                existing.size = size_text;
                 existing.progress = existing.progress.max(queued_progress);
             } else {
                 hist.push(ActivityRecord {
-                    name: queued.name.clone(),
+                    name,
                     item_type: "file".to_string(),
-                    size: format_bytes(queued.size),
-                    status: "syncing".to_string(),
+                    size: size_text,
+                    status,
                     progress: queued_progress,
                     timestamp: current_utc_hms_timestamp(false),
                 });
@@ -1583,23 +1606,41 @@ impl AppController {
         }
 
         for done in &all_transferred {
-            let final_status = if done.error.is_empty() {
+            if !done.completed_at.is_empty()
+                && !seen.insert((done.name.clone(), done.completed_at.clone()))
+            {
+                continue;
+            }
+            let default_status = if done.error.is_empty() {
                 "success"
             } else {
                 "error"
             };
-            if let Some(existing) = hist.iter_mut().rev().find(|i| i.name == done.name) {
-                existing.size = format_bytes(done.size);
-                existing.status = final_status.to_string();
+            let Some((name, final_status)) = normalize_activity_entry(&done.name, default_status)
+            else {
+                continue;
+            };
+            let size_text = if done.name.ends_with(".trashinfo") {
+                "-".to_string()
+            } else {
+                format_bytes(done.size)
+            };
+            if let Some(existing) = hist
+                .iter_mut()
+                .rev()
+                .find(|i| i.name == name && i.status == "syncing")
+            {
+                existing.size = size_text;
+                existing.status = final_status;
                 existing.progress = 100.0;
             } else {
                 let ts = extract_hms_from_rfc3339(&done.completed_at)
                     .unwrap_or_else(|| current_utc_hms_timestamp(false));
                 hist.push(ActivityRecord {
-                    name: done.name.clone(),
+                    name,
                     item_type: "file".to_string(),
-                    size: format_bytes(done.size),
-                    status: final_status.to_string(),
+                    size: size_text,
+                    status: final_status,
                     progress: 100.0,
                     timestamp: ts,
                 });
@@ -1621,6 +1662,7 @@ impl AppController {
 
         let snapshot: Vec<ActivityRecord> = hist.iter().rev().cloned().collect();
         drop(hist);
+        drop(seen);
 
         let _ = slint::invoke_from_event_loop({
             let weak = weak.clone();
@@ -1705,6 +1747,35 @@ async fn pick_directory(title: &str) -> Option<PathBuf> {
     None
 }
 
+/// Normalizes internal FreeDesktop `.Trash-<uid>` paths into user-readable activity entries.
+fn normalize_activity_entry(raw_name: &str, default_status: &str) -> Option<(String, String)> {
+    if raw_name.starts_with(".Trash-") {
+        if raw_name.ends_with("/directorysizes") {
+            return None;
+        }
+        if let Some((_, info_file)) = raw_name.split_once("/info/")
+            && let Some(filename) = info_file.strip_suffix(".trashinfo")
+        {
+            let status = if default_status == "error" {
+                "error"
+            } else {
+                "deleted"
+            };
+            return Some((filename.to_string(), status.to_string()));
+        }
+        if let Some((_, filename)) = raw_name.split_once("/files/") {
+            let status = if default_status == "error" {
+                "error"
+            } else {
+                "deleted"
+            };
+            return Some((filename.to_string(), status.to_string()));
+        }
+    }
+
+    Some((raw_name.to_string(), default_status.to_string()))
+}
+
 fn extract_hms_from_rfc3339(ts: &str) -> Option<String> {
     let time_part = ts.split('T').nth(1)?;
     let hms = time_part.get(..8)?;
@@ -1739,5 +1810,30 @@ fn current_utc_hms_timestamp(include_date: bool) -> String {
         format!("{year:04}-{mo:02}-{d:02} {h:02}:{m:02}:{s:02} UTC")
     } else {
         format!("{h:02}:{m:02}:{s:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_activity_entry;
+
+    #[test]
+    fn normalizes_trash_and_regular_activity_entries() {
+        assert_eq!(
+            normalize_activity_entry(".Trash-1000/directorysizes", "success"),
+            None
+        );
+        assert_eq!(
+            normalize_activity_entry(".Trash-1000/info/Original_Ferris.svg.trashinfo", "success"),
+            Some(("Original_Ferris.svg".to_string(), "deleted".to_string()))
+        );
+        assert_eq!(
+            normalize_activity_entry(".Trash-1000/files/photo.png", "success"),
+            Some(("photo.png".to_string(), "deleted".to_string()))
+        );
+        assert_eq!(
+            normalize_activity_entry("docs/report.pdf", "success"),
+            Some(("docs/report.pdf".to_string(), "success".to_string()))
+        );
     }
 }
