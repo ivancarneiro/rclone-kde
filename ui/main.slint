@@ -235,21 +235,27 @@ export component AppWindow inherits Window {
         }
 
         if root.status-banner != "" : Rectangle {
-            height: 34px;
+            min-height: 38px;
             background: #2c3e50;
             HorizontalBox {
+                padding-top: 8px;
+                padding-bottom: 8px;
                 padding-left: 14px;
                 padding-right: 14px;
+                spacing: 10px;
+                alignment: stretch;
                 Text {
                     text: root.status-banner;
                     color: #ecf0f1;
                     font-size: 12px;
+                    wrap: word-wrap;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
                 Button {
                     text: "✕";
                     width: 32px;
+                    height: 26px;
                     clicked => { root.status-banner = ""; }
                 }
             }
@@ -286,6 +292,7 @@ export component AppWindow inherits Window {
             if root.remotes.length > 0 : ScrollView {
                 vertical-stretch: 1;
                 VerticalBox {
+                    alignment: start;
                     spacing: 10px;
                     padding: 4px;
 
@@ -422,6 +429,7 @@ export component AppWindow inherits Window {
                                 text: remote.reconnect_status;
                                 color: #88c0d0;
                                 font-size: 12px;
+                                wrap: word-wrap;
                             }
                         }
                     }
@@ -451,6 +459,7 @@ export component AppWindow inherits Window {
         if root.current-page == "wizard" : ScrollView {
             vertical-stretch: 1;
             VerticalBox {
+                alignment: start;
                 padding: 24px;
                 spacing: 14px;
 
@@ -569,6 +578,7 @@ export component AppWindow inherits Window {
             if root.sync-tasks.length > 0 : ScrollView {
                 vertical-stretch: 1;
                 VerticalBox {
+                    alignment: start;
                     spacing: 10px;
                     padding: 4px;
 
@@ -603,6 +613,7 @@ export component AppWindow inherits Window {
                                 text: task.local_path + "  ↔  " + task.remote_name + ":" + task.remote_path;
                                 color: #aeb7c4;
                                 font-size: 12px;
+                                wrap: word-wrap;
                             }
 
                             Text {
@@ -699,6 +710,7 @@ export component AppWindow inherits Window {
             if root.activity-items.length > 0 : ScrollView {
                 vertical-stretch: 1;
                 VerticalBox {
+                    alignment: start;
                     spacing: 8px;
                     for item in root.activity-items : Rectangle {
                         background: #242933;
@@ -736,6 +748,7 @@ export component AppWindow inherits Window {
         if root.current-page == "settings" : ScrollView {
             vertical-stretch: 1;
             VerticalBox {
+                alignment: start;
                 padding: 20px;
                 spacing: 16px;
 
@@ -915,6 +928,7 @@ export component AppWindow inherits Window {
                             text: remote.reconnect_status;
                             color: #88c0d0;
                             font-size: 12px;
+                            wrap: word-wrap;
                         }
                     }
                 }
@@ -1281,6 +1295,7 @@ export component AppWindow inherits Window {
                     border-radius: 6px;
                     ScrollView {
                         VerticalBox {
+                            alignment: start;
                             padding: 10px;
                             Text {
                                 text: root.active-log-text == "" ? "Waiting for output..." : root.active-log-text;

@@ -111,6 +111,7 @@ impl MountManager {
             "--max-size".to_string(),
             "1G".to_string(),
             "--drive-acknowledge-abuse".to_string(),
+            "--allow-non-empty".to_string(),
             "--config".to_string(),
             self.rclone_conf.to_string_lossy().into_owned(),
         ];
@@ -138,18 +139,49 @@ impl MountManager {
             .status();
 
         if mount_point.exists() && !Self::is_mounted_system(mount_point) {
-            if let Err(err) = fs::remove_dir(mount_point) {
-                warn!(
-                    "Could not remove stale mount directory {} (may be non-empty): {err}",
-                    mount_point.display()
-                );
-            } else {
+            if Self::remove_empty_dirs_bottom_up(mount_point) {
                 info!(
                     "Removed stale empty mount directory {}",
                     mount_point.display()
                 );
+            } else {
+                warn!(
+                    "Could not remove stale mount directory {} (contains files)",
+                    mount_point.display()
+                );
             }
         }
+    }
+
+    /// Recursively removes empty directories bottom-up without following symlinks or deleting files.
+    fn remove_empty_dirs_bottom_up(dir: &Path) -> bool {
+        let Ok(meta) = fs::symlink_metadata(dir) else {
+            return false;
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return false;
+        }
+
+        let Ok(entries) = fs::read_dir(dir) else {
+            return false;
+        };
+
+        let mut all_empty = true;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match fs::symlink_metadata(&path) {
+                Ok(child_meta) if !child_meta.file_type().is_symlink() && child_meta.is_dir() => {
+                    if !Self::remove_empty_dirs_bottom_up(&path) {
+                        all_empty = false;
+                    }
+                }
+                _ => {
+                    all_empty = false;
+                }
+            }
+        }
+
+        all_empty && fs::remove_dir(dir).is_ok()
     }
 
     /// Terminates all managed mount processes and sweeps the mount root with `fusermount -uz`.
@@ -337,6 +369,7 @@ mod tests {
                 .any(|w| w == ["--vfs-cache-mode", "full"])
         );
         assert!(default_args.windows(2).any(|w| w == ["--max-size", "1G"]));
+        assert!(default_args.contains(&"--allow-non-empty".to_string()));
         assert!(!default_args.contains(&"--read-only".to_string()));
 
         let safe_args = mgr.build_mount_args(
@@ -381,9 +414,12 @@ gdrive: /home/user/RcloneMounts/My\\040Drive fuse.rclone rw,nosuid,nodev 0 0\n";
         );
 
         let empty_dir = mgr.get_mount_point("stale_empty");
-        fs::create_dir_all(&empty_dir).expect("create empty dir");
+        fs::create_dir_all(empty_dir.join("a/b/c")).expect("create nested empty dirs");
         mgr.cleanup_zombie(&empty_dir);
-        assert!(!empty_dir.exists());
+        assert!(
+            !empty_dir.exists(),
+            "stale mount dir with only empty subdirectories should be pruned"
+        );
 
         let non_empty_dir = mgr.get_mount_point("non_empty");
         fs::create_dir_all(&non_empty_dir).expect("create non-empty dir");
