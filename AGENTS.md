@@ -1,20 +1,25 @@
-# Rclone Manager - Project Instructions
+# Rclone Manager - Project Instructions & Ponytail Mode
 
 ## Flujo de Trabajo (Git Flow)
 - **Rama `master`**: Reservada estrictamente para producción. NUNCA hacer push directo.
-- **Rama `staging`**: Rama principal de desarrollo y pruebas. Todos los cambios nuevos deben integrarse aquí primero.
+- **Rama `staging`**: Rama principal de desarrollo y pruebas del stack actual.
+- **Rama `feature/rust-migration`**: Rama activa para la evolución y migración del core a Rust.
 - **Merge a master**: Solo mediante Pull Request (PR) real (`gh pr create`).
-- **Integridad**: NUNCA desactivar la protección de la rama `master` en GitHub/GitLab. La sincronización debe ser un proceso de revisión y aprobación formal, incluso si es por nosotros mismos.
-- **Validación**: Mandatorio ejecutar `uv run pytest` en `staging` antes de abrir un PR a `master`.
+- **Validación**: Mandatorio superar todos los hooks locales de git antes de abrir un PR.
 
-## Convenciones de Desarrollo
-- **Commits**: Seguir [Conventional Commits](https://www.conventionalcommits.org/) (ej: `fix(mount): ...`, `docs: ...`).
-- **Documentación**: 
-    - Mantener `CHANGELOG.md` siguiendo "Keep a Changelog".
-    - En `README.md`, los arreglos de errores van bajo la sección "## 🛠️ Bug Fixes".
-- **Arquitectura**: 
-    - La lógica de montajes debe centralizarse en `MountManager`.
-    - La limpieza de montajes zombie se realiza mediante `fusermount -uz` (lazy unmount).
+## Convenciones de Commits (MANDATORIO)
+- **Conventional Commits**: Cada commit DEBE respetar el estándar `tipo(ámbito): descripción` (ej: `feat(core): add async rclone client`, `fix(mount): clean zombie mounts`).
+- Tipos válidos: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- El hook local `.githooks/commit-msg` bloquea cualquier mensaje que no cumpla el estándar.
 
-## Workflow de Resiliencia
-- La aplicación DEBE limpiar el directorio de montajes (`<base_dir>/mounts`) al iniciar y al cerrar para evitar errores de conexión (ENOTCONN).
+## Seguridad & Pre-Commit (MANDATORIO)
+El hook `.githooks/pre-commit` valida automáticamente:
+1. **Secretos:** `gitleaks` previene el commit de tokens, passwords o claves privadas.
+2. **Sintaxis:** Validación sintáctica de Rust (`cargo fmt`, `cargo check`), Bash (`bash -n`) y Python (`py_compile`).
+3. **CVEs:** `cargo audit` verifica vulnerabilidades en dependencias.
+
+## Ponytail Mode (Senior Dev Minimalist Philosophy)
+- El mejor código es el que nunca se escribe.
+- YAGNI estricto: cero wrappers, abstracciones o flexibilidad prematura que nadie ha solicitado.
+- Toda lógica no trivial debe estar respaldada por un test o aserción.
+- Usar los comandos `/ponytail`, `/ponytail-review`, `/ponytail-audit` y `/ponytail-debt`.

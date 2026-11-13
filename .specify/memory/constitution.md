@@ -25,6 +25,25 @@ Cada módulo nuevo o refactorizado debe contar con su especificación formal baj
 2. Tareas atómicas ejecutables (`/speckit.tasks`).
 3. Pruebas unitarias y de integración para cada componente del núcleo (cliente RC, gestor de procesos, gestor de montajes).
 
+### VI. Conventional Commits Mandatorio (NON-NEGOTIABLE)
+TODO commit realizado en el repositorio DEBE respetar estrictamente la convención de [Conventional Commits v1.0.0](https://www.conventionalcommits.org/):
+- Formato: `<tipo>(<ámbito opcional>): <descripción breve y precisa en imperativo>`
+- Tipos autorizados: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Esta regla es verificada y bloqueada a nivel local mediante el hook `commit-msg`. Está prohibido el uso de `--no-verify` para omitir esta regla.
+
+### VII. Pre-Commit Security & Quality Gates
+Antes de confirmar cualquier commit, el hook `pre-commit` ejecuta automáticamente:
+1. **Escaneo de Secretos:** `gitleaks` bloquea commits que contengan tokens, claves privadas o credenciales en stage.
+2. **Chequeo de Sintaxis:** Verificación de sintaxis de Rust (`cargo check`, `cargo fmt`), scripts (`bash -n`) y Python (`py_compile`).
+3. **Auditoría de CVEs:** `cargo audit` verifica vulnerabilidades conocidas en dependencias.
+
+### VIII. Filosofía Ponytail (Minimalismo & YAGNI)
+Se adopta la mentalidad de Ponytail (`DietrichGebert/ponytail`):
+1. La mejor línea de código es la que no se escribe.
+2. Soluciones mínimas, completas y directas sobre la biblioteca estándar o dependencias existentes.
+3. Cero abstracciones o wrappers innecesarios que nadie ha solicitado.
+4. Toda lógica no trivial debe incluir su correspondiente test unitario.
+
 ## Technology Stack & Constraints
 
 - **Lenguaje:** Rust 1.85+ (Edición 2021 / 2024).
@@ -47,4 +66,4 @@ Cada módulo nuevo o refactorizado debe contar con su especificación formal baj
 
 Esta constitución rige todo el desarrollo de la migración a Rust en la rama `feature/rust-migration`. Cualquier cambio arquitectónico debe documentarse mediante una enmienda en este archivo o en las especificaciones asociadas.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-12 | **Last Amended**: 2026-11-12
+**Version**: 1.1.0 | **Ratified**: 2026-11-12 | **Last Amended**: 2026-11-12
