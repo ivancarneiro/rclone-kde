@@ -36,6 +36,7 @@ impl Tray for RcloneTray {
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
+        info!("Tray action: Show main window");
         let _ = self.tx.send(TrayAction::Show);
     }
 
@@ -44,6 +45,7 @@ impl Tray for RcloneTray {
             MenuItem::Standard(StandardItem {
                 label: "Show Manager".to_string(),
                 activate: Box::new(|tray: &mut Self| {
+                    info!("Tray action: Show main window");
                     let _ = tray.tx.send(TrayAction::Show);
                 }),
                 ..Default::default()

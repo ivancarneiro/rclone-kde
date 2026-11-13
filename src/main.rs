@@ -171,6 +171,15 @@ fn main() -> Result<()> {
         window.show().context("Failed to show main window")?;
     } else {
         info!("Starting minimized to system tray");
+        // On Wayland/Winit, showing then immediately hiding transitions the adapter
+        // to Suspended cleanly so later tray/IPC show() calls create a mapped surface.
+        let weak = window.as_weak();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(win) = weak.upgrade() {
+                let _ = win.show();
+                let _ = win.hide();
+            }
+        });
     }
 
     slint::run_event_loop_until_quit().context("Slint event loop error")?;

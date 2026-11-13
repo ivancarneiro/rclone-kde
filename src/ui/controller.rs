@@ -1574,8 +1574,10 @@ fn show_window(weak: &slint::Weak<AppWindow>) {
         let weak = weak.clone();
         move || {
             if let Some(win) = weak.upgrade() {
+                info!("Showing main window");
                 let _ = win.show();
                 win.window().set_minimized(false);
+                win.window().request_redraw();
             }
         }
     });
