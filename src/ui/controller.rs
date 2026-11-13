@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 use chrono::Local;
 use serde_json::json;
@@ -25,7 +25,7 @@ use crate::core::rclone_client::{
 use crate::core::secret_manager::{KeyringSecretStore, SecretManager};
 use crate::core::settings_manager::SettingsManager;
 use crate::core::single_instance::InstanceCommand;
-use crate::core::sync_manager::SyncManager;
+use crate::core::sync_manager::{SyncManager, SyncTask};
 use crate::core::sync_worker::{SyncEvent, spawn_sync_process, validate_and_build_sync_args};
 use crate::ui::tray::TrayAction;
 use crate::ui::{ActivityItemData, AppWindow, RemoteCardData, SyncTaskData};
@@ -48,6 +48,9 @@ pub struct AppController {
     active_sync_tasks: Arc<Mutex<HashMap<u32, JoinHandle<()>>>>,
     activity_history: Arc<Mutex<Vec<ActivityRecord>>>,
     seen_transferred: Arc<Mutex<HashSet<(String, String)>>>,
+    gdoc_cooldowns: Arc<Mutex<HashMap<(String, String), Instant>>>,
+    ephemeral_tasks: Arc<Mutex<Vec<SyncTask>>>,
+    next_ephemeral_id: Arc<AtomicU32>,
     http_google: reqwest::Client,
 }
 
@@ -94,6 +97,9 @@ impl AppController {
             active_sync_tasks: Arc::new(Mutex::new(HashMap::new())),
             activity_history: Arc::new(Mutex::new(Vec::new())),
             seen_transferred: Arc::new(Mutex::new(HashSet::new())),
+            gdoc_cooldowns: Arc::new(Mutex::new(HashMap::new())),
+            ephemeral_tasks: Arc::new(Mutex::new(Vec::new())),
+            next_ephemeral_id: Arc::new(AtomicU32::new(900_000)),
             http_google,
         }
     }
@@ -106,9 +112,11 @@ impl AppController {
         mut instance_rx: mpsc::Receiver<InstanceCommand>,
     ) {
         let weak = window.as_weak();
+        let (gdoc_tx, mut gdoc_rx) = mpsc::unbounded_channel::<(String, String)>();
 
-        // Populate initial synchronous UI state
+        // Populate initial synchronous UI state and wire Google Docs FUSE interception channel
         self.runtime.block_on(async {
+            self.mounts.lock().await.set_gdoc_sender(gdoc_tx);
             self.sync_settings_to_ui(window).await;
             self.sync_tasks_to_ui(window).await;
         });
@@ -620,6 +628,23 @@ impl AppController {
             }
         });
 
+        // Ephemeral Google Docs export & LibreOffice launcher
+        self.runtime.spawn({
+            let ctrl = Arc::clone(self);
+            let weak = weak.clone();
+            async move {
+                while let Some((remote_name, rel_path)) = gdoc_rx.recv().await {
+                    let ctrl_task = Arc::clone(&ctrl);
+                    let weak_task = weak.clone();
+                    ctrl.runtime.spawn(async move {
+                        ctrl_task
+                            .handle_ephemeral_gdoc_open(&weak_task, remote_name, rel_path)
+                            .await;
+                    });
+                }
+            }
+        });
+
         // Tray & Single-Instance wakeup listener
         self.runtime.spawn({
             let ctrl = Arc::clone(self);
@@ -687,49 +712,30 @@ impl AppController {
         window.set_wizard_client_secret(secret.into());
     }
 
-    async fn sync_tasks_to_ui(&self, window: &AppWindow) {
-        let tasks = {
+    async fn combined_sync_tasks(&self) -> Vec<SyncTask> {
+        let mut combined = self.ephemeral_tasks.lock().await.clone();
+        let persisted = {
             let mgr = self.sync_manager.lock().await;
             mgr.get_tasks().to_vec()
         };
-        let ui_tasks: Vec<SyncTaskData> = tasks
-            .into_iter()
-            .map(|t| SyncTaskData {
-                id: t.id as i32,
-                name: t.name.into(),
-                local_path: t.local_path.into(),
-                remote_name: t.remote_name.into(),
-                remote_path: t.remote_path.into(),
-                strategy: t.strategy.into(),
-                last_sync: t.last_sync.into(),
-                status: t.status.into(),
-            })
-            .collect();
+        combined.extend(persisted);
+        combined
+    }
+
+    async fn sync_tasks_to_ui(&self, window: &AppWindow) {
+        let tasks = self.combined_sync_tasks().await;
+        let ui_tasks: Vec<SyncTaskData> = tasks.into_iter().map(task_to_ui_data).collect();
         window.set_sync_tasks(ModelRc::new(VecModel::from(ui_tasks)));
     }
 
     async fn push_sync_tasks_to_ui(&self, weak: &slint::Weak<AppWindow>) {
-        let tasks = {
-            let mgr = self.sync_manager.lock().await;
-            mgr.get_tasks().to_vec()
-        };
+        let tasks = self.combined_sync_tasks().await;
         let _ = slint::invoke_from_event_loop({
             let weak = weak.clone();
             move || {
                 if let Some(win) = weak.upgrade() {
-                    let ui_tasks: Vec<SyncTaskData> = tasks
-                        .into_iter()
-                        .map(|t| SyncTaskData {
-                            id: t.id as i32,
-                            name: t.name.into(),
-                            local_path: t.local_path.into(),
-                            remote_name: t.remote_name.into(),
-                            remote_path: t.remote_path.into(),
-                            strategy: t.strategy.into(),
-                            last_sync: t.last_sync.into(),
-                            status: t.status.into(),
-                        })
-                        .collect();
+                    let ui_tasks: Vec<SyncTaskData> =
+                        tasks.into_iter().map(task_to_ui_data).collect();
                     win.set_sync_tasks(ModelRc::new(VecModel::from(ui_tasks)));
                 }
             }
@@ -1562,22 +1568,211 @@ impl AppController {
                 if let Some(win) = weak.upgrade() {
                     win.set_global_speed_text(speed_text.into());
                     win.set_global_bytes_text(bytes_text.into());
-                    let items: Vec<ActivityItemData> = snapshot
-                        .into_iter()
-                        .map(|r| ActivityItemData {
-                            name: r.name.into(),
-                            item_type: r.item_type.into(),
-                            size: r.size.into(),
-                            status: r.status.into(),
-                            progress: r.progress,
-                            timestamp: r.timestamp.into(),
-                        })
-                        .collect();
-                    win.set_activity_items(ModelRc::new(VecModel::from(items)));
+                    push_activity_items_to_window(&win, snapshot);
                 }
             }
         });
     }
+
+    async fn push_activity_history_to_ui(&self, weak: &slint::Weak<AppWindow>) {
+        let snapshot: Vec<ActivityRecord> = {
+            let hist = self.activity_history.lock().await;
+            hist.iter().rev().cloned().collect()
+        };
+        let _ = slint::invoke_from_event_loop({
+            let weak = weak.clone();
+            move || {
+                if let Some(win) = weak.upgrade() {
+                    push_activity_items_to_window(&win, snapshot);
+                }
+            }
+        });
+    }
+
+    async fn handle_ephemeral_gdoc_open(
+        self: &Arc<Self>,
+        weak: &slint::Weak<AppWindow>,
+        remote_name: String,
+        rel_path: String,
+    ) {
+        {
+            let mut cooldowns = self.gdoc_cooldowns.lock().await;
+            let key = (remote_name.clone(), rel_path.clone());
+            if let Some(prev) = cooldowns.get(&key)
+                && prev.elapsed() < Duration::from_secs(15)
+            {
+                return;
+            }
+            cooldowns.insert(key, Instant::now());
+        }
+
+        let local_dest = self
+            .paths
+            .cache_dir
+            .join("gdocs")
+            .join(&remote_name)
+            .join(&rel_path);
+        if let Some(parent) = local_dest.parent()
+            && let Err(err) = tokio::fs::create_dir_all(parent).await
+        {
+            error!("Failed creating local Google Doc cache dir: {err}");
+            return;
+        }
+
+        let filename = rel_path.rsplit('/').next().unwrap_or(&rel_path).to_string();
+        let eph_id = self.next_ephemeral_id.fetch_add(1, Ordering::Relaxed);
+        let eph_task = SyncTask {
+            id: eph_id,
+            name: format!("⚡ [Efímera] {filename}"),
+            local_path: local_dest.to_string_lossy().into_owned(),
+            remote_name: remote_name.clone(),
+            remote_path: rel_path.clone(),
+            strategy: "export".to_string(),
+            last_sync: "Running...".to_string(),
+            status: "running".to_string(),
+        };
+
+        self.ephemeral_tasks.lock().await.push(eph_task);
+        self.push_sync_tasks_to_ui(weak).await;
+
+        {
+            let mut hist = self.activity_history.lock().await;
+            if let Some(existing) = hist
+                .iter_mut()
+                .rev()
+                .find(|i| i.name == filename && i.status == "syncing")
+            {
+                existing.progress = 30.0;
+                existing.timestamp = current_local_timestamp(false);
+            } else {
+                hist.push(ActivityRecord {
+                    name: filename.clone(),
+                    item_type: "file".to_string(),
+                    size: "-".to_string(),
+                    status: "syncing".to_string(),
+                    progress: 30.0,
+                    timestamp: current_local_timestamp(false),
+                });
+                if hist.len() > 100 {
+                    let overflow = hist.len() - 100;
+                    hist.drain(0..overflow);
+                }
+            }
+        }
+        self.push_activity_history_to_ui(weak).await;
+
+        let remote_spec = format!("{remote_name}:{rel_path}");
+        info!("Exporting Google Doc via ephemeral task: {remote_spec}");
+        let output = Command::new(resolve_binary("rclone"))
+            .args([
+                "copyto",
+                &remote_spec,
+                &local_dest.to_string_lossy(),
+                "--config",
+                &self.paths.rclone_conf.to_string_lossy(),
+            ])
+            .env("PATH", augmented_path_env())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        self.ephemeral_tasks.lock().await.retain(|t| t.id != eph_id);
+        self.push_sync_tasks_to_ui(weak).await;
+
+        let exported_size = match output {
+            Ok(out) if out.status.success() => tokio::fs::metadata(&local_dest)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0),
+            Ok(out) => {
+                let err_text = String::from_utf8_lossy(&out.stderr);
+                warn!("Ephemeral Google Doc export failed for {filename}: {err_text}");
+                0
+            }
+            Err(err) => {
+                error!("Failed spawning rclone copyto for {filename}: {err}");
+                0
+            }
+        };
+
+        let final_status = if exported_size > 0 {
+            "success"
+        } else {
+            "error"
+        };
+        let final_size = if exported_size > 0 {
+            format_bytes(exported_size)
+        } else {
+            "-".to_string()
+        };
+
+        {
+            let mut hist = self.activity_history.lock().await;
+            if let Some(existing) = hist
+                .iter_mut()
+                .rev()
+                .find(|i| i.name == filename && i.status == "syncing")
+            {
+                existing.size = final_size;
+                existing.status = final_status.to_string();
+                existing.progress = 100.0;
+                existing.timestamp = current_local_timestamp(false);
+            } else {
+                hist.push(ActivityRecord {
+                    name: filename.clone(),
+                    item_type: "file".to_string(),
+                    size: final_size,
+                    status: final_status.to_string(),
+                    progress: 100.0,
+                    timestamp: current_local_timestamp(false),
+                });
+            }
+        }
+        self.push_activity_history_to_ui(weak).await;
+
+        if exported_size > 0 {
+            send_notification(
+                "Rclone Manager",
+                &format!("Google Doc exported locally: {filename}"),
+                UrgencyLevel::Normal,
+            );
+            let _ = Command::new(resolve_binary("xdg-open"))
+                .arg(&local_dest)
+                .env("PATH", augmented_path_env())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+    }
+}
+
+fn task_to_ui_data(t: SyncTask) -> SyncTaskData {
+    SyncTaskData {
+        id: t.id as i32,
+        name: t.name.into(),
+        local_path: t.local_path.into(),
+        remote_name: t.remote_name.into(),
+        remote_path: t.remote_path.into(),
+        strategy: t.strategy.into(),
+        last_sync: t.last_sync.into(),
+        status: t.status.into(),
+    }
+}
+
+fn push_activity_items_to_window(win: &AppWindow, snapshot: Vec<ActivityRecord>) {
+    let items: Vec<ActivityItemData> = snapshot
+        .into_iter()
+        .map(|r| ActivityItemData {
+            name: r.name.into(),
+            item_type: r.item_type.into(),
+            size: r.size.into(),
+            status: r.status.into(),
+            progress: r.progress,
+            timestamp: r.timestamp.into(),
+        })
+        .collect();
+    win.set_activity_items(ModelRc::new(VecModel::from(items)));
 }
 
 fn show_window(weak: &slint::Weak<AppWindow>) {

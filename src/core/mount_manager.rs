@@ -6,8 +6,9 @@ use std::process::{Command as StdCommand, Stdio};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::{sleep, timeout};
 use tracing::{error, info, warn};
 
@@ -36,6 +37,7 @@ pub struct MountManager {
     rclone_conf: PathBuf,
     processes: HashMap<String, Child>,
     rc_urls: HashMap<String, String>,
+    gdoc_tx: Option<UnboundedSender<(String, String)>>,
 }
 
 impl MountManager {
@@ -46,7 +48,12 @@ impl MountManager {
             rclone_conf,
             processes: HashMap::new(),
             rc_urls: HashMap::new(),
+            gdoc_tx: None,
         }
+    }
+
+    pub fn set_gdoc_sender(&mut self, tx: UnboundedSender<(String, String)>) {
+        self.gdoc_tx = Some(tx);
     }
 
     pub fn active_rc_urls(&self) -> Vec<String> {
@@ -255,6 +262,7 @@ impl MountManager {
 
         let rclone_bin = resolve_binary("rclone");
         let mut args = self.build_mount_args(remote_name, &mount_point, opts);
+        args.push("--log-level=DEBUG".to_string());
         let rc_addr = allocate_loopback_rc_addr();
         if let Some(ref addr) = rc_addr {
             args.extend([
@@ -287,10 +295,23 @@ impl MountManager {
                     self.rc_urls
                         .insert(remote_name.to_string(), format!("http://{addr}"));
                 }
-                if let Some(mut pipe) = stderr_pipe.take() {
-                    // Drain stderr in background so rclone mount never hits EPIPE.
+                if let Some(pipe) = stderr_pipe.take() {
+                    let gdoc_tx = self.gdoc_tx.clone();
+                    let remote = remote_name.to_string();
+                    let mnt = mount_point.clone();
+                    // Drain stderr line-by-line to prevent EPIPE and intercept zero-byte Google Doc reads.
                     tokio::spawn(async move {
-                        let _ = tokio::io::copy(&mut pipe, &mut tokio::io::sink()).await;
+                        let mut lines = BufReader::new(pipe).lines();
+                        while let Ok(Some(line)) = lines.next_line().await {
+                            if let Some(ref tx) = gdoc_tx
+                                && let Some(rel_path) = parse_zero_read_gdoc_path(&line)
+                                && tokio::fs::metadata(mnt.join(&rel_path))
+                                    .await
+                                    .is_ok_and(|m| m.len() == 0)
+                            {
+                                let _ = tx.send((remote.clone(), rel_path));
+                            }
+                        }
                     });
                 }
                 return Ok(MountResult {
@@ -374,6 +395,33 @@ fn allocate_loopback_rc_addr() -> Option<String> {
     let listener = TcpListener::bind("127.0.0.1:0").ok()?;
     let addr = listener.local_addr().ok()?;
     Some(addr.to_string())
+}
+
+/// Extracts relative mount path from `rclone mount` debug logs when an empty read (`n=0, err=EOF`) occurs on an exportable Google Doc.
+pub fn parse_zero_read_gdoc_path(line: &str) -> Option<String> {
+    const PREFIX: &str = "DEBUG : ";
+    const SUFFIX: &str = "): >_readAt: n=0, err=EOF";
+    const GDOC_EXTS: [&str; 7] = [".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".svg"];
+
+    let after_prefix = line.split_once(PREFIX)?.1;
+    let without_suffix = after_prefix.strip_suffix(SUFFIX)?;
+    let ptr_idx = without_suffix.rfind("(0x")?;
+    let rel_path = without_suffix[..ptr_idx].trim();
+    if rel_path.is_empty() || rel_path.starts_with(".Trash-") {
+        return None;
+    }
+
+    let basename = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    if basename.starts_with(".~lock.") {
+        return None;
+    }
+
+    let lower = basename.to_ascii_lowercase();
+    if GDOC_EXTS.iter().any(|ext| lower.ends_with(ext)) {
+        Some(rel_path.to_string())
+    } else {
+        None
+    }
 }
 
 impl Drop for MountManager {
@@ -460,5 +508,23 @@ gdrive: /home/user/RcloneMounts/My\\040Drive fuse.rclone rw,nosuid,nodev 0 0\n";
         fs::write(non_empty_dir.join("keep.txt"), "data").expect("write file");
         mgr.cleanup_zombie(&non_empty_dir);
         assert!(non_empty_dir.exists(), "non-empty dir must never be wiped");
+    }
+
+    #[test]
+    fn parses_zero_read_gdoc_log_lines() {
+        let gdoc_line = "2026/11/13 12:06:56 DEBUG : docs/0. TICKET 1223 (v1).docx(0xc000930380): >_readAt: n=0, err=EOF";
+        assert_eq!(
+            parse_zero_read_gdoc_path(gdoc_line).as_deref(),
+            Some("docs/0. TICKET 1223 (v1).docx")
+        );
+
+        let lock_line = "2026/11/13 12:06:56 DEBUG : docs/.~lock.file.docx#(0xc000930380): >_readAt: n=0, err=EOF";
+        assert_eq!(parse_zero_read_gdoc_path(lock_line), None);
+
+        let trash_line = "2026/11/13 12:06:56 DEBUG : .Trash-1000/files/old.docx(0xc000930380): >_readAt: n=0, err=EOF";
+        assert_eq!(parse_zero_read_gdoc_path(trash_line), None);
+
+        let non_gdoc_line = "2026/11/13 12:06:56 DEBUG : archive/backup.tar.gz(0xc000930380): >_readAt: n=0, err=EOF";
+        assert_eq!(parse_zero_read_gdoc_path(non_gdoc_line), None);
     }
 }
