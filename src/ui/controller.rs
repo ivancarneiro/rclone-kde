@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
+use chrono::Local;
 use serde_json::json;
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecModel};
 use tokio::process::Command;
@@ -18,7 +19,9 @@ use crate::core::autostart_manager::AutostartManager;
 use crate::core::config::{AppPaths, augmented_path_env, resolve_binary};
 use crate::core::mount_manager::{MountManager, MountOptions};
 use crate::core::notifications::{UrgencyLevel, send_notification};
-use crate::core::rclone_client::{RcloneClient, authorize_drive, format_bytes};
+use crate::core::rclone_client::{
+    RcloneClient, TransferItem, TransferredItem, VfsQueueItem, authorize_drive, format_bytes,
+};
 use crate::core::secret_manager::{KeyringSecretStore, SecretManager};
 use crate::core::settings_manager::SettingsManager;
 use crate::core::single_instance::InstanceCommand;
@@ -1390,7 +1393,7 @@ impl AppController {
                 ctrl.active_sync_tasks.lock().await.remove(&task_id);
 
                 if finished_ok {
-                    let ts = current_utc_hms_timestamp(true);
+                    let ts = current_local_timestamp(true);
                     let mut mgr = ctrl.sync_manager.lock().await;
                     let _ = mgr.update_task_status(task_id, "Idle", Some(&ts));
                     drop(mgr);
@@ -1487,7 +1490,7 @@ impl AppController {
                 size: "-".to_string(),
                 status: status.to_string(),
                 progress: 100.0,
-                timestamp: current_utc_hms_timestamp(false),
+                timestamp: current_local_timestamp(false),
             });
             if hist.len() > 100 {
                 let overflow = hist.len() - 100;
@@ -1541,124 +1544,13 @@ impl AppController {
 
         let mut seen = self.seen_transferred.lock().await;
         let mut hist = self.activity_history.lock().await;
-        let mut seen_active_names: HashSet<String> = HashSet::new();
-
-        for active in &all_transferring {
-            let Some((name, status)) = normalize_activity_entry(&active.name, "syncing") else {
-                continue;
-            };
-            seen_active_names.insert(name.clone());
-            let size_text = if active.name.ends_with(".trashinfo") {
-                "-".to_string()
-            } else {
-                format_bytes(active.size)
-            };
-            if let Some(existing) = hist
-                .iter_mut()
-                .rev()
-                .find(|i| i.name == name && i.status == "syncing")
-            {
-                existing.size = size_text;
-                existing.status = status;
-                existing.progress = active.percentage as f32;
-            } else {
-                hist.push(ActivityRecord {
-                    name,
-                    item_type: "file".to_string(),
-                    size: size_text,
-                    status,
-                    progress: active.percentage as f32,
-                    timestamp: current_utc_hms_timestamp(false),
-                });
-            }
-        }
-
-        for queued in &all_vfs_queued {
-            let Some((name, status)) = normalize_activity_entry(&queued.name, "syncing") else {
-                continue;
-            };
-            if !seen_active_names.insert(name.clone()) {
-                continue;
-            }
-            let queued_progress = if queued.uploading { 50.0 } else { 15.0 };
-            let size_text = if queued.name.ends_with(".trashinfo") {
-                "-".to_string()
-            } else {
-                format_bytes(queued.size)
-            };
-            if let Some(existing) = hist
-                .iter_mut()
-                .rev()
-                .find(|i| i.name == name && i.status == "syncing")
-            {
-                existing.size = size_text;
-                existing.progress = existing.progress.max(queued_progress);
-            } else {
-                hist.push(ActivityRecord {
-                    name,
-                    item_type: "file".to_string(),
-                    size: size_text,
-                    status,
-                    progress: queued_progress,
-                    timestamp: current_utc_hms_timestamp(false),
-                });
-            }
-        }
-
-        for done in &all_transferred {
-            if !done.completed_at.is_empty()
-                && !seen.insert((done.name.clone(), done.completed_at.clone()))
-            {
-                continue;
-            }
-            let default_status = if done.error.is_empty() {
-                "success"
-            } else {
-                "error"
-            };
-            let Some((name, final_status)) = normalize_activity_entry(&done.name, default_status)
-            else {
-                continue;
-            };
-            let size_text = if done.name.ends_with(".trashinfo") {
-                "-".to_string()
-            } else {
-                format_bytes(done.size)
-            };
-            if let Some(existing) = hist
-                .iter_mut()
-                .rev()
-                .find(|i| i.name == name && i.status == "syncing")
-            {
-                existing.size = size_text;
-                existing.status = final_status;
-                existing.progress = 100.0;
-            } else {
-                let ts = extract_hms_from_rfc3339(&done.completed_at)
-                    .unwrap_or_else(|| current_utc_hms_timestamp(false));
-                hist.push(ActivityRecord {
-                    name,
-                    item_type: "file".to_string(),
-                    size: size_text,
-                    status: final_status,
-                    progress: 100.0,
-                    timestamp: ts,
-                });
-            }
-        }
-
-        // Mark any previously "syncing" record not seen in active/queue as completed.
-        for item in hist.iter_mut() {
-            if item.status == "syncing" && !seen_active_names.contains(&item.name) {
-                item.status = "success".to_string();
-                item.progress = 100.0;
-            }
-        }
-
-        if hist.len() > 100 {
-            let overflow = hist.len() - 100;
-            hist.drain(0..overflow);
-        }
+        merge_activity_poll(
+            &mut hist,
+            &mut seen,
+            &all_transferring,
+            &all_vfs_queued,
+            &all_transferred,
+        );
 
         let snapshot: Vec<ActivityRecord> = hist.iter().rev().cloned().collect();
         drop(hist);
@@ -1747,6 +1639,130 @@ async fn pick_directory(title: &str) -> Option<PathBuf> {
     None
 }
 
+fn merge_activity_poll(
+    hist: &mut Vec<ActivityRecord>,
+    seen: &mut HashSet<(String, String)>,
+    transferring: &[TransferItem],
+    vfs_queued: &[VfsQueueItem],
+    transferred: &[TransferredItem],
+) {
+    let mut seen_active_names: HashSet<String> = HashSet::new();
+
+    for active in transferring {
+        let Some((name, status)) = normalize_activity_entry(&active.name, "syncing") else {
+            continue;
+        };
+        seen_active_names.insert(name.clone());
+        let size_text = format_activity_size(&active.name, active.size);
+        if let Some(existing) = hist
+            .iter_mut()
+            .rev()
+            .find(|i| i.name == name && (i.status == "syncing" || i.status == status))
+        {
+            existing.size = size_text;
+            existing.status = status;
+            existing.progress = active.percentage as f32;
+        } else {
+            hist.push(ActivityRecord {
+                name,
+                item_type: "file".to_string(),
+                size: size_text,
+                status,
+                progress: active.percentage as f32,
+                timestamp: current_local_timestamp(false),
+            });
+        }
+    }
+
+    for queued in vfs_queued {
+        let Some((name, status)) = normalize_activity_entry(&queued.name, "syncing") else {
+            continue;
+        };
+        if !seen_active_names.insert(name.clone()) {
+            continue;
+        }
+        let queued_progress = if queued.uploading { 50.0 } else { 15.0 };
+        let size_text = format_activity_size(&queued.name, queued.size);
+        if let Some(existing) = hist
+            .iter_mut()
+            .rev()
+            .find(|i| i.name == name && (i.status == "syncing" || i.status == status))
+        {
+            existing.size = size_text;
+            existing.progress = existing.progress.max(queued_progress);
+        } else {
+            hist.push(ActivityRecord {
+                name,
+                item_type: "file".to_string(),
+                size: size_text,
+                status,
+                progress: queued_progress,
+                timestamp: current_local_timestamp(false),
+            });
+        }
+    }
+
+    for done in transferred {
+        if !done.completed_at.is_empty()
+            && !seen.insert((done.name.clone(), done.completed_at.clone()))
+        {
+            continue;
+        }
+        let default_status = if done.error.is_empty() {
+            "success"
+        } else {
+            "error"
+        };
+        let Some((name, final_status)) = normalize_activity_entry(&done.name, default_status)
+        else {
+            continue;
+        };
+        let size_text = format_activity_size(&done.name, done.size);
+        let ts = extract_hms_from_rfc3339(&done.completed_at)
+            .unwrap_or_else(|| current_local_timestamp(false));
+        if let Some(existing) = hist
+            .iter_mut()
+            .rev()
+            .find(|i| i.name == name && (i.status == "syncing" || i.status == final_status))
+        {
+            existing.size = size_text;
+            existing.status = final_status;
+            existing.progress = 100.0;
+            existing.timestamp = ts;
+        } else {
+            hist.push(ActivityRecord {
+                name,
+                item_type: "file".to_string(),
+                size: size_text,
+                status: final_status,
+                progress: 100.0,
+                timestamp: ts,
+            });
+        }
+    }
+
+    // Mark any previously "syncing" record not seen in active/queue as completed.
+    for item in hist.iter_mut() {
+        if item.status == "syncing" && !seen_active_names.contains(&item.name) {
+            item.status = "success".to_string();
+            item.progress = 100.0;
+        }
+    }
+
+    if hist.len() > 100 {
+        let overflow = hist.len() - 100;
+        hist.drain(0..overflow);
+    }
+}
+
+fn format_activity_size(raw_name: &str, size: u64) -> String {
+    if raw_name.ends_with(".trashinfo") {
+        "-".to_string()
+    } else {
+        format_bytes(size)
+    }
+}
+
 /// Normalizes internal FreeDesktop `.Trash-<uid>` paths into user-readable activity entries.
 fn normalize_activity_entry(raw_name: &str, default_status: &str) -> Option<(String, String)> {
     if raw_name.starts_with(".Trash-") {
@@ -1786,36 +1802,22 @@ fn extract_hms_from_rfc3339(ts: &str) -> Option<String> {
     }
 }
 
-fn current_utc_hms_timestamp(include_date: bool) -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let h = (secs % 86_400) / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
+fn current_local_timestamp(include_date: bool) -> String {
     if include_date {
-        // Civil date calculation from Unix days (Howard Hinnant's algorithm)
-        let days = (secs / 86_400) as i64;
-        let z = days + 719_468;
-        let era = z.div_euclid(146_097);
-        let doe = z.rem_euclid(146_097) as u64;
-        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-        let y = (yoe as i64) + era * 400;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let d = doy - (153 * mp + 2) / 5 + 1;
-        let mo = if mp < 10 { mp + 3 } else { mp - 9 };
-        let year = y + i64::from(mo <= 2);
-        format!("{year:04}-{mo:02}-{d:02} {h:02}:{m:02}:{s:02} UTC")
+        Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
     } else {
-        format!("{h:02}:{m:02}:{s:02}")
+        Local::now().format("%H:%M:%S").to_string()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_activity_entry;
+    use std::collections::HashSet;
+
+    use super::{
+        ActivityRecord, TransferItem, TransferredItem, VfsQueueItem, merge_activity_poll,
+        normalize_activity_entry,
+    };
 
     #[test]
     fn normalizes_trash_and_regular_activity_entries() {
@@ -1835,5 +1837,74 @@ mod tests {
             normalize_activity_entry("docs/report.pdf", "success"),
             Some(("docs/report.pdf".to_string(), "success".to_string()))
         );
+    }
+
+    #[test]
+    fn deduplicates_repeated_vfs_queue_and_transferred_polls() {
+        let mut hist: Vec<ActivityRecord> = Vec::new();
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+
+        let trash_queued = vec![VfsQueueItem {
+            name: ".Trash-1000/info/doc.pdf.trashinfo".to_string(),
+            size: 71,
+            uploading: false,
+        }];
+        let trash_uploading = vec![VfsQueueItem {
+            name: ".Trash-1000/info/doc.pdf.trashinfo".to_string(),
+            size: 71,
+            uploading: true,
+        }];
+        let trash_done = vec![TransferredItem {
+            name: ".Trash-1000/info/doc.pdf.trashinfo".to_string(),
+            size: 71,
+            bytes: 71,
+            error: String::new(),
+            completed_at: "2026-11-13T11:42:01.123-03:00".to_string(),
+        }];
+
+        // Two polls while waiting in VFS queue, then completion poll, then duplicate poll.
+        merge_activity_poll(&mut hist, &mut seen, &[], &trash_queued, &[]);
+        merge_activity_poll(&mut hist, &mut seen, &[], &trash_uploading, &[]);
+        merge_activity_poll(&mut hist, &mut seen, &[], &[], &trash_done);
+        merge_activity_poll(&mut hist, &mut seen, &[], &[], &trash_done);
+
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0].name, "doc.pdf");
+        assert_eq!(hist[0].status, "deleted");
+        assert_eq!(hist[0].size, "-");
+        assert_eq!(hist[0].progress, 100.0);
+        assert_eq!(hist[0].timestamp, "11:42:01");
+
+        // Regular file: VFS queue -> active transferring -> core/transferred
+        let file_queued = vec![VfsQueueItem {
+            name: "upload.zip".to_string(),
+            size: 2048,
+            uploading: false,
+        }];
+        let file_active = vec![TransferItem {
+            name: "upload.zip".to_string(),
+            size: 2048,
+            bytes: 1024,
+            percentage: 50.0,
+            speed: 1024.0,
+        }];
+        let file_done = vec![TransferredItem {
+            name: "upload.zip".to_string(),
+            size: 2048,
+            bytes: 2048,
+            error: String::new(),
+            completed_at: "2026-11-13T11:43:10.000-03:00".to_string(),
+        }];
+
+        merge_activity_poll(&mut hist, &mut seen, &[], &file_queued, &[]);
+        merge_activity_poll(&mut hist, &mut seen, &file_active, &[], &[]);
+        merge_activity_poll(&mut hist, &mut seen, &[], &[], &file_done);
+
+        assert_eq!(hist.len(), 2);
+        assert_eq!(hist[1].name, "upload.zip");
+        assert_eq!(hist[1].status, "success");
+        assert_eq!(hist[1].size, "2.0 KiB");
+        assert_eq!(hist[1].progress, 100.0);
+        assert_eq!(hist[1].timestamp, "11:43:10");
     }
 }

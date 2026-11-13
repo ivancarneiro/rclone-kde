@@ -4024,6 +4024,7 @@ name = "rclone-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dirs",
  "fontique",
  "keyring",
