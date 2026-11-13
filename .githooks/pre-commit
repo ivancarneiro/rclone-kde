@@ -102,7 +102,7 @@ echo "🛡️  [3/3] Verificando vulnerabilidades y CVEs en dependencias..."
 if [ -f "Cargo.lock" ]; then
     echo "   Ejecutando 'cargo audit'..."
     if command -v cargo-audit &> /dev/null || cargo audit --version &> /dev/null; then
-        if ! cargo audit; then
+        if ! env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_PREFIX cargo audit; then
             echo "❌ ERROR: 'cargo audit' detectó vulnerabilidades (CVEs) en dependencias de Rust."
             exit 1
         fi
