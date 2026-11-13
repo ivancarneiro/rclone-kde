@@ -19,3 +19,8 @@
 
 ## Workflow de Resiliencia
 - La aplicación DEBE limpiar el directorio de montajes (`<base_dir>/mounts`) al iniciar y al cerrar para evitar errores de conexión (ENOTCONN).
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
