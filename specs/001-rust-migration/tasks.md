@@ -38,10 +38,10 @@
 
 **Goal**: Construir las 5 vistas en Slint con paridad 1:1 de v1.3.2 (sin KeePassXC), integrar `ksni` para System Tray en KDE Plasma/Wayland, conectar el despertar de ventana desde Single-Instance IPC y manejar señales `SIGINT`/`SIGTERM`.
 
-- [ ] T3.1 Añadir `slint` (y `ksni`) en `Cargo.toml`, crear `build.rs` para compilar los archivos `.slint` y verificar `cargo audit`.
-- [ ] T3.2 Implementar vistas `.slint`: `main.slint` (ventana `min 700x500`, drawer lateral, títulos dinámicos), `dashboard.slint` y `mount_dialog.slint`.
-- [ ] T3.3 Implementar vistas `.slint`: `wizard.slint`, `sync.slint` (con diálogo de creación y logs estilo Matrix), `activity.slint` y `settings.slint` (Keyring CRUD, auto-push, reconnect por remoto, autostart, mount_dir; sin KeePassXC).
-- [ ] T3.4 Implementar `src/ui/tray.rs` con `ksni` (`StatusNotifierItem` D-Bus: Show Manager, Hide, Exit) y bucle de eventos Tokio ↔ Slint (`invoke_from_event_loop`).
-- [ ] T3.5 Conectar `SingleInstance` (`InstanceCommand::Show`), señales `SIGINT`/`SIGTERM` para `cleanup_all()` al cerrar, y autostart silencioso de `auto_mounts` al iniciar.
-- [ ] T3.6 Verificar Fase 3 (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo build --release`), probar ejecución en KDE Plasma/Wayland y actualizar `README.md` / `CHANGELOG.md`.
+- [x] T3.1 Añadir `slint` (y `ksni`) en `Cargo.toml`, crear `build.rs` para compilar los archivos `.slint` y verificar `cargo audit`.
+- [x] T3.2 Implementar vistas `.slint`: `main.slint` (ventana `min 700x500`, drawer lateral, títulos dinámicos), `dashboard.slint` y `mount_dialog.slint`.
+- [x] T3.3 Implementar vistas `.slint`: `wizard.slint`, `sync.slint` (con diálogo de creación y logs estilo Matrix), `activity.slint` y `settings.slint` (Keyring CRUD, auto-push, reconnect por remoto, autostart, mount_dir; sin KeePassXC).
+- [x] T3.4 Implementar `src/ui/tray.rs` con `ksni` (`StatusNotifierItem` D-Bus: Show Manager, Hide, Exit) y bucle de eventos Tokio ↔ Slint (`invoke_from_event_loop`).
+- [x] T3.5 Conectar `SingleInstance` (`InstanceCommand::Show`), señales `SIGINT`/`SIGTERM` para `cleanup_all()` al cerrar, y autostart silencioso de `auto_mounts` al iniciar.
+- [x] T3.6 Verificar Fase 3 (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo build --release`), probar ejecución en KDE Plasma/Wayland y actualizar `README.md` / `CHANGELOG.md`.
 

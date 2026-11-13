@@ -1,0 +1,1345 @@
+import {
+    Button,
+    CheckBox,
+    ComboBox,
+    LineEdit,
+    ProgressIndicator,
+    ScrollView,
+    VerticalBox,
+    HorizontalBox,
+} from "std-widgets.slint";
+
+export struct RemoteCardData {
+    name: string,
+    display: string,
+    detail: string,
+    is_mounted: bool,
+    quota_text: string,
+    storage_percent: float,
+    sync_strategy: string,
+    auto_mount: bool,
+    reconnect_status: string,
+    is_reconnecting: bool,
+}
+
+export struct SyncTaskData {
+    id: int,
+    name: string,
+    local_path: string,
+    remote_name: string,
+    remote_path: string,
+    strategy: string,
+    last_sync: string,
+    status: string,
+}
+
+export struct ActivityItemData {
+    name: string,
+    item_type: string,
+    size: string,
+    status: string,
+    progress: float,
+    timestamp: string,
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: #333842;
+}
+
+component NavButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 6px;
+    background: root.active ? #2b5278 : (touch.has-hover ? #2a2e36 : transparent);
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalBox {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            text: root.label;
+            color: root.active ? #ffffff : #d8dee9;
+            font-size: 14px;
+            font-weight: root.active ? 700 : 400;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: root.current-page == "dashboard" ? "Remotes Dashboard - Rclone Manager"
+        : root.current-page == "activity" ? "Activity Monitor - Rclone Manager"
+        : root.current-page == "sync" ? "Sync Tasks (Bisync) - Rclone Manager"
+        : root.current-page == "settings" ? "Global Settings - Rclone Manager"
+        : "New Drive Wizard - Rclone Manager";
+    icon: @image-url("../assets/rclone_isologo.png");
+    min-width: 700px;
+    min-height: 500px;
+    preferred-width: 920px;
+    preferred-height: 620px;
+    background: #1b1e24;
+
+    // Navigation & UI state
+    in-out property <string> current-page: "dashboard";
+    in-out property <bool> drawer-open: false;
+    in-out property <string> status-banner: "";
+
+    // Models
+    in-out property <[RemoteCardData]> remotes: [];
+    in-out property <[string]> remote-names: [];
+    in-out property <[SyncTaskData]> sync-tasks: [];
+    in-out property <[ActivityItemData]> activity-items: [];
+
+    // Activity stats
+    in-out property <string> global-speed-text: "0 B/s";
+    in-out property <string> global-bytes-text: "0 B";
+
+    // Settings state (KeePassXC intentionally excluded)
+    in-out property <bool> run-on-startup: false;
+    in-out property <bool> start-minimized: false;
+    in-out property <string> mount-dir-text: "";
+    in-out property <bool> has-google-credentials: false;
+    in-out property <string> keyring-status-text: "";
+    in-out property <bool> keyring-busy: false;
+
+    // Wizard state
+    in-out property <string> wizard-status-text: "";
+    in-out property <bool> wizard-busy: false;
+    in-out property <string> wizard-client-id: "";
+    in-out property <string> wizard-client-secret: "";
+
+    // Sync logs & browse bridge
+    in-out property <int> active-log-task-id: -1;
+    in-out property <string> active-log-task-name: "";
+    in-out property <string> active-log-text: "";
+    in-out property <string> sync-browse-path: "";
+
+    // Local dialog states
+    property <bool> mount-dialog-open: false;
+    property <string> mount-dialog-remote: "";
+    property <bool> mount-opt-read-only: false;
+    property <bool> mount-opt-network-mode: false;
+
+    property <bool> delete-dialog-open: false;
+    property <string> delete-dialog-remote: "";
+
+    property <bool> sync-help-open: false;
+    property <bool> sync-logs-open: false;
+    property <bool> sync-editor-open: false;
+    property <int> sync-edit-id: -1;
+    property <string> sync-edit-name: "";
+    property <string> sync-edit-remote-name: "";
+    property <string> sync-edit-remote-path: "";
+    property <int> sync-edit-strategy-index: 0;
+
+    property <bool> cred-editor-open: false;
+    property <string> wiz-name: "";
+    property <bool> wiz-auto-mount: true;
+
+    // Callbacks
+    callback refresh-remotes();
+    callback mount-remote(string, bool, bool);
+    callback unmount-remote(string);
+    callback open-mount(string);
+    callback reconnect-remote(string);
+    callback delete-remote(string);
+    callback create-drive-remote(string, string, string, bool);
+    callback clear-wizard-credentials();
+    callback set-run-on-startup(bool);
+    callback set-start-minimized(bool);
+    callback browse-mount-dir();
+    callback save-mount-dir(string);
+    callback save-google-credentials(string, string);
+    callback delete-google-credentials();
+    callback toggle-auto-mount(string, bool);
+    callback set-sync-strategy(string, string);
+    callback browse-sync-folder();
+    callback add-sync-task(string, string, string, string, string);
+    callback update-sync-task(int, string, string, string, string, string);
+    callback remove-sync-task(int);
+    callback run-sync-task(int, bool);
+    callback select-log-task(int, string);
+
+    // =========================================================================
+    // MAIN CONTENT LAYOUT
+    // =========================================================================
+    VerticalBox {
+        padding: 0px;
+        spacing: 0px;
+
+        // Top Bar
+        Rectangle {
+            height: 48px;
+            background: #232730;
+
+            HorizontalBox {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 12px;
+
+                Button {
+                    text: root.current-page == "wizard" ? "← Back" : "☰";
+                    width: root.current-page == "wizard" ? 80px : 44px;
+                    clicked => {
+                        if (root.current-page == "wizard") {
+                            root.current-page = "dashboard";
+                        } else {
+                            root.drawer-open = !root.drawer-open;
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.current-page == "dashboard" ? "Active Connections"
+                        : root.current-page == "activity" ? "Activity Monitor"
+                        : root.current-page == "sync" ? "Sync Tasks (Bisync)"
+                        : root.current-page == "settings" ? "Global Settings"
+                        : "Connect New Google Drive";
+                    color: #eceff4;
+                    font-size: 16px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                if root.current-page == "dashboard" : Button {
+                    text: "↻ Refresh";
+                    clicked => { root.refresh-remotes(); }
+                }
+
+                if root.current-page == "sync" : Button {
+                    text: "❓ Help";
+                    clicked => { root.sync-help-open = true; }
+                }
+
+                if root.current-page == "sync" : Button {
+                    text: "+ New Task";
+                    clicked => {
+                        root.sync-edit-id = -1;
+                        root.sync-edit-name = "";
+                        root.sync-browse-path = "";
+                        root.sync-edit-remote-name = root.remote-names.length > 0 ? root.remote-names[0] : "";
+                        root.sync-edit-remote-path = "";
+                        root.sync-edit-strategy-index = 0;
+                        root.sync-editor-open = true;
+                    }
+                }
+            }
+        }
+
+        if root.status-banner != "" : Rectangle {
+            height: 34px;
+            background: #2c3e50;
+            HorizontalBox {
+                padding-left: 14px;
+                padding-right: 14px;
+                Text {
+                    text: root.status-banner;
+                    color: #ecf0f1;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Button {
+                    text: "✕";
+                    width: 32px;
+                    clicked => { root.status-banner = ""; }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // PAGE 1: DASHBOARD
+        // ---------------------------------------------------------------------
+        if root.current-page == "dashboard" : VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+            vertical-stretch: 1;
+
+            if root.remotes.length == 0 : Rectangle {
+                vertical-stretch: 1;
+                VerticalBox {
+                    alignment: center;
+                    spacing: 10px;
+                    Text {
+                        text: "No cloud remotes configured yet.";
+                        color: #9aa5b1;
+                        font-size: 15px;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Click 'Add New Drive' below to connect Google Drive.";
+                        color: #6c7682;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if root.remotes.length > 0 : ScrollView {
+                vertical-stretch: 1;
+                VerticalBox {
+                    spacing: 10px;
+                    padding: 4px;
+
+                    for remote in root.remotes : Rectangle {
+                        background: #242933;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: remote.is_mounted ? #3d7a47 : #323844;
+
+                        VerticalBox {
+                            padding: 14px;
+                            spacing: 8px;
+
+                            HorizontalBox {
+                                spacing: 10px;
+
+                                // Status dot
+                                Rectangle {
+                                    width: 12px;
+                                    height: 12px;
+                                    border-radius: 6px;
+                                    y: 4px;
+                                    background: remote.is_mounted ? #4caf50 : #f59e0b;
+                                }
+
+                                VerticalBox {
+                                    padding: 0px;
+                                    spacing: 2px;
+                                    horizontal-stretch: 1;
+
+                                    HorizontalBox {
+                                        padding: 0px;
+                                        spacing: 8px;
+                                        Text {
+                                            text: remote.display;
+                                            color: #ffffff;
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                        }
+                                        Rectangle {
+                                            background: #2f3746;
+                                            border-radius: 4px;
+                                            height: 20px;
+                                            width: 68px;
+                                            Text {
+                                                text: remote.sync_strategy;
+                                                color: #88c0d0;
+                                                font-size: 10px;
+                                                font-weight: 700;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: remote.detail;
+                                        color: #a3be8c;
+                                        font-size: 12px;
+                                    }
+                                }
+
+                                // Actions
+                                if !remote.is_mounted : Button {
+                                    text: "Mount";
+                                    clicked => { root.mount-remote(remote.name, false, false); }
+                                }
+                                if remote.is_mounted : Button {
+                                    text: "Open";
+                                    clicked => { root.open-mount(remote.name); }
+                                }
+                                if remote.is_mounted : Button {
+                                    text: "Unmount";
+                                    clicked => { root.unmount-remote(remote.name); }
+                                }
+
+                                Button {
+                                    text: "⚙";
+                                    width: 38px;
+                                    enabled: !remote.is_mounted;
+                                    clicked => {
+                                        root.mount-dialog-remote = remote.name;
+                                        root.mount-opt-read-only = false;
+                                        root.mount-opt-network-mode = false;
+                                        root.mount-dialog-open = true;
+                                    }
+                                }
+
+                                if root.has-google-credentials && !remote.is_mounted : Button {
+                                    text: "🔄";
+                                    width: 38px;
+                                    enabled: !remote.is_reconnecting;
+                                    clicked => { root.reconnect-remote(remote.name); }
+                                }
+
+                                Button {
+                                    text: "🗑";
+                                    width: 38px;
+                                    clicked => {
+                                        root.delete-dialog-remote = remote.name;
+                                        root.delete-dialog-open = true;
+                                    }
+                                }
+                            }
+
+                            if remote.quota_text != "" : VerticalBox {
+                                padding: 0px;
+                                spacing: 4px;
+                                HorizontalBox {
+                                    padding: 0px;
+                                    Text {
+                                        text: "Storage: " + remote.quota_text;
+                                        color: #9aa5b1;
+                                        font-size: 11px;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                                Rectangle {
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: #171a20;
+                                    Rectangle {
+                                        x: 0px;
+                                        y: 0px;
+                                        height: parent.height;
+                                        border-radius: 3px;
+                                        width: parent.width * Math.clamp(remote.storage_percent, 0.0, 1.0);
+                                        background: remote.storage_percent > 0.9 ? #e05252 : #4caf50;
+                                    }
+                                }
+                            }
+
+                            if remote.reconnect_status != "" : Text {
+                                text: remote.reconnect_status;
+                                color: #88c0d0;
+                                font-size: 12px;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Divider {}
+
+            HorizontalBox {
+                padding: 0px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: "+ Add New Drive";
+                    clicked => {
+                        root.wiz-name = "";
+                        root.wiz-auto-mount = true;
+                        root.wizard-status-text = "";
+                        root.current-page = "wizard";
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // PAGE 2: NEW DRIVE WIZARD
+        // ---------------------------------------------------------------------
+        if root.current-page == "wizard" : ScrollView {
+            vertical-stretch: 1;
+            VerticalBox {
+                padding: 24px;
+                spacing: 14px;
+
+                Text {
+                    text: "Remote Name:";
+                    color: #d8dee9;
+                    font-size: 13px;
+                }
+                LineEdit {
+                    placeholder-text: "e.g. MyDrive";
+                    text <=> root.wiz-name;
+                }
+
+                Text {
+                    text: "Google Client ID (Optional):";
+                    color: #d8dee9;
+                    font-size: 13px;
+                }
+                LineEdit {
+                    placeholder-text: "Your Google Cloud Client ID";
+                    text <=> root.wizard-client-id;
+                }
+
+                Text {
+                    text: "Google Client Secret (Optional):";
+                    color: #d8dee9;
+                    font-size: 13px;
+                }
+                LineEdit {
+                    placeholder-text: "Your Google Cloud Client Secret";
+                    input-type: InputType.password;
+                    text <=> root.wizard-client-secret;
+                }
+
+                if root.has-google-credentials : Rectangle {
+                    height: 36px;
+                    border-radius: 6px;
+                    background: #1b5e20;
+                    HorizontalBox {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        Text {
+                            text: "🔑 Credentials preloaded from system keyring";
+                            color: #81c784;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: "✕ Clear";
+                            clicked => { root.clear-wizard-credentials(); }
+                        }
+                    }
+                }
+
+                CheckBox {
+                    text: "Mount automatically on system startup";
+                    checked <=> root.wiz-auto-mount;
+                }
+
+                if root.wizard-status-text != "" : Text {
+                    text: root.wizard-status-text;
+                    color: #88c0d0;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+
+                if root.wizard-busy : ProgressIndicator {
+                    indeterminate: true;
+                }
+
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "Cancel";
+                        enabled: !root.wizard-busy;
+                        clicked => { root.current-page = "dashboard"; }
+                    }
+                    Button {
+                        text: "Connect & Authorize";
+                        enabled: root.wiz-name != "" && !root.wizard-busy;
+                        clicked => {
+                            root.create-drive-remote(
+                                root.wiz-name,
+                                root.wizard-client-id,
+                                root.wizard-client-secret,
+                                root.wiz-auto-mount
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // PAGE 3: SYNC TASKS (BISYNC)
+        // ---------------------------------------------------------------------
+        if root.current-page == "sync" : VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+            vertical-stretch: 1;
+
+            if root.sync-tasks.length == 0 : Rectangle {
+                vertical-stretch: 1;
+                Text {
+                    text: "No synchronization tasks yet. Click '+ New Task' above.";
+                    color: #9aa5b1;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.sync-tasks.length > 0 : ScrollView {
+                vertical-stretch: 1;
+                VerticalBox {
+                    spacing: 10px;
+                    padding: 4px;
+
+                    for task in root.sync-tasks : Rectangle {
+                        background: #242933;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: #323844;
+
+                        VerticalBox {
+                            padding: 12px;
+                            spacing: 6px;
+
+                            HorizontalBox {
+                                spacing: 8px;
+                                Text {
+                                    text: task.name + " [" + task.strategy + "]";
+                                    color: #ffffff;
+                                    font-size: 15px;
+                                    font-weight: 700;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: task.status;
+                                    color: task.status == "Error" ? #ef9a9a : #88c0d0;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: task.local_path + "  ↔  " + task.remote_name + ":" + task.remote_path;
+                                color: #aeb7c4;
+                                font-size: 12px;
+                            }
+
+                            Text {
+                                text: "Last sync: " + task.last_sync;
+                                color: #7e8896;
+                                font-size: 11px;
+                            }
+
+                            HorizontalBox {
+                                spacing: 8px;
+                                Button {
+                                    text: "▶ Sync Now";
+                                    clicked => { root.run-sync-task(task.id, false); }
+                                }
+                                Button {
+                                    text: "👁 Simulate";
+                                    clicked => { root.run-sync-task(task.id, true); }
+                                }
+                                Button {
+                                    text: "📜 Logs";
+                                    clicked => {
+                                        root.select-log-task(task.id, task.name);
+                                        root.sync-logs-open = true;
+                                    }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Button {
+                                    text: "Edit";
+                                    clicked => {
+                                        root.sync-edit-id = task.id;
+                                        root.sync-edit-name = task.name;
+                                        root.sync-browse-path = task.local_path;
+                                        root.sync-edit-remote-name = task.remote_name;
+                                        root.sync-edit-remote-path = task.remote_path;
+                                        root.sync-edit-strategy-index = task.strategy == "sync" ? 1 : (task.strategy == "copy" ? 2 : 0);
+                                        root.sync-editor-open = true;
+                                    }
+                                }
+                                Button {
+                                    text: "🗑";
+                                    width: 38px;
+                                    clicked => { root.remove-sync-task(task.id); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // PAGE 4: ACTIVITY MONITOR
+        // ---------------------------------------------------------------------
+        if root.current-page == "activity" : VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+            vertical-stretch: 1;
+
+            Rectangle {
+                height: 52px;
+                background: #242933;
+                border-radius: 8px;
+                HorizontalBox {
+                    padding: 12px;
+                    spacing: 24px;
+                    Text {
+                        text: "Global Speed: " + root.global-speed-text;
+                        color: #88c0d0;
+                        font-size: 13px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "Transferred: " + root.global-bytes-text;
+                        color: #a3be8c;
+                        font-size: 13px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            if root.activity-items.length == 0 : Rectangle {
+                vertical-stretch: 1;
+                Text {
+                    text: "No active or recent transfers.";
+                    color: #9aa5b1;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.activity-items.length > 0 : ScrollView {
+                vertical-stretch: 1;
+                VerticalBox {
+                    spacing: 8px;
+                    for item in root.activity-items : Rectangle {
+                        background: #242933;
+                        border-radius: 6px;
+                        VerticalBox {
+                            padding: 10px;
+                            spacing: 4px;
+                            HorizontalBox {
+                                spacing: 8px;
+                                Text {
+                                    text: item.name;
+                                    color: #ffffff;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: item.size + " • " + item.status + " • " + item.timestamp;
+                                    color: item.status == "error" ? #ef9a9a : (item.status == "success" ? #81c784 : #88c0d0);
+                                    font-size: 11px;
+                                }
+                            }
+                            if item.status == "syncing" : ProgressIndicator {
+                                progress: item.progress / 100.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // PAGE 5: SETTINGS (Sin KeePassXC)
+        // ---------------------------------------------------------------------
+        if root.current-page == "settings" : ScrollView {
+            vertical-stretch: 1;
+            VerticalBox {
+                padding: 20px;
+                spacing: 16px;
+
+                Text {
+                    text: "General";
+                    color: #ffffff;
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+
+                CheckBox {
+                    text: "Run Application on System Startup";
+                    checked <=> root.run-on-startup;
+                    toggled => { root.set-run-on-startup(self.checked); }
+                }
+
+                CheckBox {
+                    text: "Start Minimized to Tray";
+                    checked <=> root.start-minimized;
+                    toggled => { root.set-start-minimized(self.checked); }
+                }
+
+                Text {
+                    text: "Mount Root Directory (default ~/RcloneMounts):";
+                    color: #d8dee9;
+                    font-size: 12px;
+                }
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        text <=> root.mount-dir-text;
+                    }
+                    Button {
+                        text: "Browse...";
+                        clicked => { root.browse-mount-dir(); }
+                    }
+                    Button {
+                        text: "Save Path";
+                        clicked => { root.save-mount-dir(root.mount-dir-text); }
+                    }
+                }
+
+                Divider {}
+
+                Text {
+                    text: "Google Credentials";
+                    color: #ffffff;
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+
+                Text {
+                    text: "Stored securely in KDE Wallet / Secret Service (service: RcloneKDE) and automatically pushed to existing Drive remotes.";
+                    color: #9aa5b1;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 34px;
+                    border-radius: 6px;
+                    background: root.has-google-credentials ? #1b5e20 : #3e2723;
+                    HorizontalBox {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        Text {
+                            text: root.has-google-credentials
+                                ? "🔑 Credentials saved in system keyring"
+                                : "⚠️ No Google credentials stored";
+                            color: root.has-google-credentials ? #81c784 : #ef9a9a;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.cred-editor-open : Rectangle {
+                    background: #242933;
+                    border-radius: 8px;
+                    VerticalBox {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text { text: "Client ID"; color: #aeb7c4; font-size: 12px; }
+                        cred-id-input := LineEdit { placeholder-text: "Paste Google Client ID"; }
+                        Text { text: "Client Secret"; color: #aeb7c4; font-size: 12px; }
+                        cred-secret-input := LineEdit {
+                            placeholder-text: "Paste Google Client Secret";
+                            input-type: InputType.password;
+                        }
+                        HorizontalBox {
+                            spacing: 8px;
+                            Rectangle { horizontal-stretch: 1; }
+                            Button {
+                                text: "Cancel";
+                                clicked => { root.cred-editor-open = false; }
+                            }
+                            Button {
+                                text: "Save to Keyring";
+                                enabled: cred-id-input.text != "" && cred-secret-input.text != "" && !root.keyring-busy;
+                                clicked => {
+                                    root.save-google-credentials(cred-id-input.text, cred-secret-input.text);
+                                    cred-id-input.text = "";
+                                    cred-secret-input.text = "";
+                                    root.cred-editor-open = false;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    Button {
+                        text: root.has-google-credentials ? "✏️ Update Credentials" : "📝 Add Credentials";
+                        clicked => { root.cred-editor-open = !root.cred-editor-open; }
+                    }
+                    Button {
+                        text: "🗑 Remove from Keyring";
+                        enabled: root.has-google-credentials && !root.keyring-busy;
+                        clicked => { root.delete-google-credentials(); }
+                    }
+                }
+
+                if root.keyring-status-text != "" : Text {
+                    text: root.keyring-status-text;
+                    color: #88c0d0;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+
+                Divider {}
+
+                Text {
+                    text: "Remote Settings & Reconnect";
+                    color: #ffffff;
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+
+                for remote in root.remotes : Rectangle {
+                    background: #242933;
+                    border-radius: 6px;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text {
+                                text: remote.name;
+                                color: #ffffff;
+                                font-size: 14px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            CheckBox {
+                                text: "Auto-Mount";
+                                checked: remote.auto_mount;
+                                toggled => { root.toggle-auto-mount(remote.name, self.checked); }
+                            }
+                            ComboBox {
+                                width: 110px;
+                                model: ["bisync", "sync", "copy"];
+                                current-index: remote.sync_strategy == "sync" ? 1 : (remote.sync_strategy == "copy" ? 2 : 0);
+                                selected(val) => { root.set-sync-strategy(remote.name, val); }
+                            }
+                            Button {
+                                text: "🔄 Reconnect";
+                                enabled: root.has-google-credentials && !remote.is_reconnecting;
+                                clicked => { root.reconnect-remote(remote.name); }
+                            }
+                        }
+                        if remote.reconnect_status != "" : Text {
+                            text: remote.reconnect_status;
+                            color: #88c0d0;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // NAVIGATION DRAWER OVERLAY
+    // =========================================================================
+    if root.drawer-open : Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        background: #00000088;
+
+        TouchArea {
+            clicked => { root.drawer-open = false; }
+        }
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: Math.min(parent.width * 0.65, 280px);
+            height: parent.height;
+            background: #21252d;
+
+            TouchArea {}
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                Rectangle {
+                    height: 120px;
+                    background: #2b303a;
+                    border-radius: 8px;
+                    VerticalBox {
+                        alignment: center;
+                        spacing: 6px;
+                        Image {
+                            source: @image-url("../assets/rclone_isologo.png");
+                            width: 48px;
+                            height: 48px;
+                            image-fit: contain;
+                        }
+                        Text {
+                            text: "Rclone Manager";
+                            color: #ffffff;
+                            font-size: 16px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                NavButton {
+                    label: "Dashboard";
+                    active: root.current-page == "dashboard";
+                    clicked => {
+                        root.current-page = "dashboard";
+                        root.drawer-open = false;
+                    }
+                }
+                NavButton {
+                    label: "Activity Monitor";
+                    active: root.current-page == "activity";
+                    clicked => {
+                        root.current-page = "activity";
+                        root.drawer-open = false;
+                    }
+                }
+                NavButton {
+                    label: "Sync Tasks (Bisync)";
+                    active: root.current-page == "sync";
+                    clicked => {
+                        root.current-page = "sync";
+                        root.drawer-open = false;
+                    }
+                }
+                NavButton {
+                    label: "Settings";
+                    active: root.current-page == "settings";
+                    clicked => {
+                        root.current-page = "settings";
+                        root.drawer-open = false;
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+    }
+
+    // =========================================================================
+    // MODAL: MOUNT OPTIONS
+    // =========================================================================
+    if root.mount-dialog-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+        TouchArea { clicked => { root.mount-dialog-open = false; } }
+
+        Rectangle {
+            width: Math.min(400px, parent.width * 0.9);
+            height: 220px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #242933;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: #3e4554;
+            TouchArea {}
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: "Mount Options: " + root.mount-dialog-remote;
+                    color: #ffffff;
+                    font-size: 15px;
+                    font-weight: 700;
+                }
+                CheckBox {
+                    text: "Read-Only (Safe Mode)";
+                    checked <=> root.mount-opt-read-only;
+                }
+                CheckBox {
+                    text: "Stream / Network Mode (Minimal VFS Cache)";
+                    checked <=> root.mount-opt-network-mode;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalBox {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "Cancel";
+                        clicked => { root.mount-dialog-open = false; }
+                    }
+                    Button {
+                        text: "Mount Now";
+                        clicked => {
+                            root.mount-dialog-open = false;
+                            root.mount-remote(
+                                root.mount-dialog-remote,
+                                root.mount-opt-read-only,
+                                root.mount-opt-network-mode
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // MODAL: DELETE CONFIRMATION
+    // =========================================================================
+    if root.delete-dialog-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+        TouchArea { clicked => { root.delete-dialog-open = false; } }
+
+        Rectangle {
+            width: Math.min(420px, parent.width * 0.9);
+            height: 170px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #242933;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: #6b3434;
+            TouchArea {}
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: "Delete Connection?";
+                    color: #ffffff;
+                    font-size: 15px;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "Are you sure you want to delete '" + root.delete-dialog-remote + "'? This action cannot be undone.";
+                    color: #d8dee9;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalBox {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "No";
+                        clicked => { root.delete-dialog-open = false; }
+                    }
+                    Button {
+                        text: "Yes, Delete";
+                        clicked => {
+                            root.delete-dialog-open = false;
+                            root.delete-remote(root.delete-dialog-remote);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // MODAL: SYNC TASK EDITOR
+    // =========================================================================
+    if root.sync-editor-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+        TouchArea { clicked => { root.sync-editor-open = false; } }
+
+        Rectangle {
+            width: Math.min(500px, parent.width * 0.92);
+            height: 410px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #242933;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: #3e4554;
+            TouchArea {}
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 10px;
+
+                Text {
+                    text: root.sync-edit-id < 0 ? "New Sync Task" : "Edit Sync Task";
+                    color: #ffffff;
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+
+                Text { text: "Task Name:"; color: #aeb7c4; font-size: 12px; }
+                LineEdit { text <=> root.sync-edit-name; placeholder-text: "e.g. Work Docs"; }
+
+                Text { text: "Local Folder:"; color: #aeb7c4; font-size: 12px; }
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        text <=> root.sync-browse-path;
+                        placeholder-text: "/home/user/Documents";
+                    }
+                    Button {
+                        text: "...";
+                        width: 44px;
+                        clicked => { root.browse-sync-folder(); }
+                    }
+                }
+
+                Text { text: "Remote & Path:"; color: #aeb7c4; font-size: 12px; }
+                HorizontalBox {
+                    padding: 0px;
+                    spacing: 8px;
+                    ComboBox {
+                        width: 160px;
+                        model: root.remote-names;
+                        current-value <=> root.sync-edit-remote-name;
+                    }
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        text <=> root.sync-edit-remote-path;
+                        placeholder-text: "RemoteFolder (empty for root)";
+                    }
+                }
+
+                Text { text: "Strategy:"; color: #aeb7c4; font-size: 12px; }
+                sync-strategy-combo := ComboBox {
+                    model: ["bisync", "sync", "copy"];
+                    current-index <=> root.sync-edit-strategy-index;
+                }
+
+                Rectangle { vertical-stretch: 1; }
+                HorizontalBox {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "Cancel";
+                        clicked => { root.sync-editor-open = false; }
+                    }
+                    Button {
+                        text: "Save Task";
+                        enabled: root.sync-edit-name != "" && root.sync-browse-path != "" && root.sync-edit-remote-name != "";
+                        clicked => {
+                            if (root.sync-edit-id < 0) {
+                                root.add-sync-task(
+                                    root.sync-edit-name,
+                                    root.sync-browse-path,
+                                    root.sync-edit-remote-name,
+                                    root.sync-edit-remote-path,
+                                    sync-strategy-combo.current-value
+                                );
+                            } else {
+                                root.update-sync-task(
+                                    root.sync-edit-id,
+                                    root.sync-edit-name,
+                                    root.sync-browse-path,
+                                    root.sync-edit-remote-name,
+                                    root.sync-edit-remote-path,
+                                    sync-strategy-combo.current-value
+                                );
+                            }
+                            root.sync-editor-open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // MODAL: SYNC LIVE LOGS ("MATRIX" STYLE)
+    // =========================================================================
+    if root.sync-logs-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #000000aa;
+        TouchArea { clicked => { root.sync-logs-open = false; } }
+
+        Rectangle {
+            width: Math.min(720px, parent.width * 0.92);
+            height: Math.min(460px, parent.height * 0.88);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #0d1117;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #2f855a;
+            TouchArea {}
+
+            VerticalBox {
+                padding: 14px;
+                spacing: 8px;
+
+                HorizontalBox {
+                    padding: 0px;
+                    Text {
+                        text: "Live Logs — " + root.active-log-task-name;
+                        color: #68d391;
+                        font-size: 14px;
+                        font-weight: 700;
+                        horizontal-stretch: 1;
+                    }
+                    Button {
+                        text: "Close";
+                        clicked => { root.sync-logs-open = false; }
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #050709;
+                    border-radius: 6px;
+                    ScrollView {
+                        VerticalBox {
+                            padding: 10px;
+                            Text {
+                                text: root.active-log-text == "" ? "Waiting for output..." : root.active-log-text;
+                                color: #48bb78;
+                                font-family: "monospace";
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // MODAL: SYNC HELP
+    // =========================================================================
+    if root.sync-help-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+        TouchArea { clicked => { root.sync-help-open = false; } }
+
+        Rectangle {
+            width: Math.min(460px, parent.width * 0.9);
+            height: 270px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #242933;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: #3e4554;
+            TouchArea {}
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 10px;
+                Text {
+                    text: "Sync Strategies Guide";
+                    color: #ffffff;
+                    font-size: 15px;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "• bisync: Two-way mirror (Local ↔ Remote). Protected with --max-delete 5.\n• sync: One-way backup (Local → Remote). Empty local folder is blocked for safety.\n• copy: One-way download (Remote → Local) without deleting local files.\n• Simulate (👁): Runs --dry-run to preview changes safely.";
+                    color: #d8dee9;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalBox {
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: "Got it";
+                        clicked => { root.sync-help-open = false; }
+                    }
+                }
+            }
+        }
+    }
+}
