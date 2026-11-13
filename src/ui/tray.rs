@@ -1,7 +1,60 @@
+use std::io::Cursor;
+use std::sync::OnceLock;
+
 use ksni::menu::StandardItem;
-use ksni::{Handle, MenuItem, Tray, TrayMethods};
+use ksni::{Handle, Icon, MenuItem, Tray, TrayMethods};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+
+const TRAY_ICON_PNG: &[u8] = include_bytes!("../../assets/icon.png");
+
+fn decode_tray_icon_pixmap() -> Vec<Icon> {
+    let mut decoder = png::Decoder::new(Cursor::new(TRAY_ICON_PNG));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+
+    let Ok(mut reader) = decoder.read_info() else {
+        warn!("Failed to read tray icon PNG header");
+        return Vec::new();
+    };
+    let mut rgba = vec![0; reader.output_buffer_size().unwrap_or(0)];
+    let Ok(info) = reader.next_frame(&mut rgba) else {
+        warn!("Failed to decode tray icon PNG frame");
+        return Vec::new();
+    };
+    rgba.truncate(info.buffer_size());
+
+    let argb = match info.color_type {
+        png::ColorType::Rgba => {
+            let mut out = Vec::with_capacity(rgba.len());
+            for px in rgba.as_chunks::<4>().0 {
+                out.extend_from_slice(&[px[3], px[0], px[1], px[2]]);
+            }
+            out
+        }
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity((rgba.len() / 3) * 4);
+            for px in rgba.as_chunks::<3>().0 {
+                out.extend_from_slice(&[0xff, px[0], px[1], px[2]]);
+            }
+            out
+        }
+        other => {
+            warn!("Unsupported tray icon PNG color type: {other:?}");
+            return Vec::new();
+        }
+    };
+
+    vec![Icon {
+        width: info.width as i32,
+        height: info.height as i32,
+        data: argb,
+    }]
+}
+
+fn tray_icon_pixmap() -> Vec<Icon> {
+    static PIXMAP: OnceLock<Vec<Icon>> = OnceLock::new();
+    PIXMAP.get_or_init(decode_tray_icon_pixmap).clone()
+}
 
 /// Actions triggered by the KDE StatusNotifierItem system tray.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +85,11 @@ impl Tray for RcloneTray {
     }
 
     fn icon_name(&self) -> String {
-        "folder-cloud".to_string()
+        String::new()
+    }
+
+    fn icon_pixmap(&self) -> Vec<Icon> {
+        tray_icon_pixmap()
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
@@ -94,7 +151,12 @@ mod tests {
 
         assert_eq!(tray.id(), "rclone-manager");
         assert_eq!(tray.title(), "Rclone Manager");
-        assert_eq!(tray.icon_name(), "folder-cloud");
+        assert_eq!(tray.icon_name(), "");
+        let pixmap = tray.icon_pixmap();
+        assert_eq!(pixmap.len(), 1);
+        assert_eq!(pixmap[0].width, 64);
+        assert_eq!(pixmap[0].height, 64);
+        assert_eq!(pixmap[0].data.len(), 64 * 64 * 4);
 
         tray.activate(0, 0);
         assert_eq!(rx.try_recv().ok(), Some(TrayAction::Show));

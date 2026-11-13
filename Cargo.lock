@@ -4029,6 +4029,7 @@ dependencies = [
  "keyring",
  "ksni",
  "notify-rust",
+ "png",
  "reqwest",
  "serde",
  "serde_json",
