@@ -12,12 +12,13 @@ La interacción con el daemon Rclone RC (Remote Control) y la red debe ser 100% 
 El sistema debe gestionar el ciclo de vida de los montajes de forma estricta:
 1. Barrido y limpieza preventiva de montajes zombies (`ENOTCONN` / "Transport endpoint not connected") tanto al arranque como al cierre.
 2. Implementación de desmontaje seguro y ordenado mediante `Drop` traits e intercepción de señales de terminación (`SIGINT`, `SIGTERM`).
-3. Uso consistente de `<project_base_dir>/mounts/` como directorio raíz de montajes gestionados.
+3. Uso consistente del estándar XDG con `~/RcloneMounts` como directorio raíz de montajes por defecto (configurable en `~/.config/rclone-manager/settings.json`).
 
 ### IV. Desktop & Platform Integration (KDE Plasma / Wayland)
-1. Integración de primer nivel con KDE Plasma y entornos de escritorio modernos bajo Wayland y X11 (soporte para System Tray vía StatusNotifierItem/DBus).
+1. Integración de primer nivel con KDE Plasma y entornos de escritorio modernos bajo Wayland y X11 mediante `ksni` (StatusNotifierItem puro en Rust vía D-Bus, sin dependencias de GTK) y `notify-rust` para notificaciones D-Bus (`org.freedesktop.Notifications`).
 2. Compatibilidad transparente con el entorno de ejecución de `systemd --user` y resolución robusta de ejecutables (`rclone`, variables de entorno `$PATH`).
-3. Gestión segura de secretos y credenciales (Google Drive Client ID/Secret, contraseñas RC) delegada a KDE Wallet / Secret Service mediante `keyring-rs`.
+3. Gestión segura de secretos y credenciales (Google Drive Client ID/Secret, contraseñas RC) delegada a KDE Wallet / Secret Service mediante `keyring`, manteniendo el identificador de servicio `"RcloneKDE"` para migración transparente.
+4. Control de instancia única (Single-Instance IPC) mediante socket Unix abstracto (`\0rclone_manager_gna_lock`), activando la ventana existente al recibir el comando `"SHOW"` desde una segunda invocación.
 
 ### V. Spec-Driven & Test-First Development
 Cada módulo nuevo o refactorizado debe contar con su especificación formal bajo GitHub Spec Kit:
@@ -41,7 +42,7 @@ Antes de confirmar cualquier commit, el hook `pre-commit` ejecuta automáticamen
 Se adopta la mentalidad de Ponytail (`DietrichGebert/ponytail`):
 1. La mejor línea de código es la que no se escribe.
 2. Soluciones mínimas, completas y directas sobre la biblioteca estándar o dependencias existentes.
-3. Cero abstracciones o wrappers innecesarios que nadie ha solicitado.
+3. Cero abstracciones o wrappers innecesarios que nadie ha solicitado (ej.: eliminación explícita de integraciones legadas fuera de alcance como KeePassXC).
 4. Toda lógica no trivial debe incluir su correspondiente test unitario.
 
 ### IX. Política de Rust Puro y Duro (Zero-Python Policy)
@@ -52,24 +53,25 @@ En la rama `feature/rust-migration` y en todo el ciclo de desarrollo de la nueva
 
 ## Technology Stack & Constraints
 
-- **Lenguaje:** Rust 1.85+ (Edición 2021 / 2024).
-- **Runtime Asíncrono:** `tokio` (full features).
-- **Cliente HTTP / RC:** `reqwest` (json, rustls).
+- **Lenguaje:** Rust 1.85+ (Edición 2024).
+- **Runtime Asíncrono:** `tokio`.
+- **Motor Rclone Híbrido:** `rclone rcd` vía HTTP (`reqwest`) para estado/config/cuotas + `tokio::process` supervisado (`kill_on_drop`) para `mount`, `bisync/sync/copy` y `authorize`.
 - **Serialización:** `serde`, `serde_json`.
-- **Secretos:** `keyring` (integración con Secret Service / KDE Wallet).
-- **Gestión de Procesos:** `tokio::process`.
-- **Logging & Observabilidad:** `tracing`, `tracing-subscriber` con rotación estructurada.
-- **Frontend / UI:** Evaluación modular (Tauri v2 / Slint / CXX-Qt para KDE Plasma).
+- **Rutas XDG:** `dirs` (`$XDG_CONFIG_HOME/rclone-manager`, `$XDG_CACHE_HOME/rclone-manager`, `~/RcloneMounts`).
+- **Secretos:** `keyring` (integración con Secret Service / KDE Wallet bajo servicio `"RcloneKDE"`).
+- **Integración KDE:** `ksni` (System Tray SNI), `notify-rust` (Notificaciones D-Bus), socket Unix abstracto (Single-Instance IPC).
+- **Logging & Observabilidad:** `tracing`, `tracing-subscriber`, `tracing-appender` con rotación diaria.
+- **Frontend / UI:** **Slint** (binario único 100% Rust, vistas `.slint`, soporte nativo Wayland/KDE).
 
 ## Quality Gates & Verification
 
 - Todo código debe compilar con cero warnings (`cargo clippy --all-targets -- -D warnings`).
 - Formato uniforme obligatorio (`cargo fmt --check`).
 - Pruebas automatizadas con `cargo test`.
-- No se permiten rutas absolutas hardcodeadas (`$HOME`, `$XDG_CONFIG_HOME`, y rutas relativas al proyecto gestionadas dinámicamente).
+- No se permiten rutas absolutas hardcodeadas (`$HOME`, `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME` resueltas dinámicamente).
 
 ## Governance
 
 Esta constitución rige todo el desarrollo de la migración a Rust en la rama `feature/rust-migration`. Cualquier cambio arquitectónico debe documentarse mediante una enmienda en este archivo o en las especificaciones asociadas.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-12 | **Last Amended**: 2026-11-12
+**Version**: 1.2.0 | **Ratified**: 2026-11-12 | **Last Amended**: 2026-11-13
