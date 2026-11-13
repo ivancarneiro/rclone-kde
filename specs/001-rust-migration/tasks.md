@@ -23,12 +23,12 @@
 
 **Goal**: Implementar comunicación híbrida con Rclone (`rclone rcd` vía `reqwest` + subprocesos `tokio::process` con `kill_on_drop`), gestión resiliente de montajes FUSE, persistencia/ejecución de tareas sync, autostart `.desktop` y notificaciones D-Bus.
 
-- [ ] T2.1 Implementar `src/core/rclone_client.rs` (cliente HTTP `reqwest` con BasicAuth, `core/version`, `config/listremotes`, `about`, `core/stats`, `rc/noop`, `config/update` y `authorize` helper) con tests contra mock HTTP.
-- [ ] T2.2 Implementar `src/core/process_manager.rs` (arranque/parada de `rclone rcd`, limpieza previa de puerto, pipe de stdout/stderr a log rotativo `rclone-daemon.log`).
-- [ ] T2.3 Implementar `src/core/mount_manager.rs` (montaje con flags VFS, `--max-size 1G`, `--read-only`, detección de punto de montaje, `cleanup_zombie` / `cleanup_all` con `fusermount -uz`, y `Drop`).
-- [ ] T2.4 Implementar `src/core/sync_manager.rs` (persistencia en `~/.config/rclone-manager/sync_tasks.json` con migración automática de `./sync_tasks.json` si existe) y `src/core/sync_worker.rs` (ejecución `bisync`/`sync`/`copy` con `--max-delete 5`, `--dry-run` y streaming por `mpsc`).
-- [ ] T2.5 [P] Implementar `src/core/autostart_manager.rs` (`~/.config/autostart/rclone-gui-manager.desktop` apuntando al binario con `--minimized`) y `src/core/notifications.rs` (`notify-rust`).
-- [ ] T2.6 Verificar Fase 2 con `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` y commit atómico.
+- [x] T2.1 Implementar `src/core/rclone_client.rs` (cliente HTTP `reqwest` con BasicAuth, `core/version`, `config/listremotes`, `about`, `core/stats`, `rc/noop`, `config/update` y `authorize` helper) con tests contra mock HTTP.
+- [x] T2.2 Implementar `src/core/process_manager.rs` (arranque/parada de `rclone rcd`, limpieza previa de puerto, pipe de stdout/stderr a log rotativo `rclone-daemon.log`).
+- [x] T2.3 Implementar `src/core/mount_manager.rs` (montaje con flags VFS, `--max-size 1G`, `--read-only`, detección de punto de montaje, `cleanup_zombie` / `cleanup_all` con `fusermount -uz`, y `Drop`).
+- [x] T2.4 Implementar `src/core/sync_manager.rs` (persistencia en `~/.config/rclone-manager/sync_tasks.json` con migración automática de `./sync_tasks.json` si existe) y `src/core/sync_worker.rs` (ejecución `bisync`/`sync`/`copy` con `--max-delete 5`, `--dry-run` y streaming por `mpsc`).
+- [x] T2.5 [P] Implementar `src/core/autostart_manager.rs` (`~/.config/autostart/rclone-gui-manager.desktop` apuntando al binario con `--minimized`) y `src/core/notifications.rs` (`notify-rust`).
+- [x] T2.6 Verificar Fase 2 con `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` y commit atómico.
 
 **Checkpoint**: Todo el backend en Rust completo, probado y desacoplado de la interfaz gráfica.
 

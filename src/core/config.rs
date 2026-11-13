@@ -1,6 +1,9 @@
+use std::env;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -88,6 +91,65 @@ pub fn generate_random_hex_16() -> Result<String> {
     Ok(hex)
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(meta) = fs::metadata(path) else {
+        return false;
+    };
+    meta.is_file() && (meta.permissions().mode() & 0o111 != 0)
+}
+
+/// Builds a `PATH` `OsString` combining user local/cargo bins and standard system
+/// paths with the current process `PATH`, ensuring compatibility under `systemd --user`.
+pub fn augmented_path_env() -> OsString {
+    let mut dirs_list: Vec<PathBuf> = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        dirs_list.push(home.join(".local/bin"));
+        dirs_list.push(home.join(".cargo/bin"));
+    }
+    dirs_list.push(PathBuf::from("/usr/local/bin"));
+    dirs_list.push(PathBuf::from("/usr/bin"));
+    dirs_list.push(PathBuf::from("/bin"));
+
+    if let Some(current) = env::var_os("PATH") {
+        for p in env::split_paths(&current) {
+            if !dirs_list.contains(&p) {
+                dirs_list.push(p);
+            }
+        }
+    }
+
+    env::join_paths(dirs_list).unwrap_or_else(|_| OsString::from("/usr/local/bin:/usr/bin:/bin"))
+}
+
+/// Searches for an executable in `augmented_path_env()`. Falls back to `name`.
+pub fn resolve_binary(name: &str) -> PathBuf {
+    resolve_binary_in_path(name, &augmented_path_env())
+}
+
+fn resolve_binary_in_path(name: &str, path_env: &OsString) -> PathBuf {
+    for dir in env::split_paths(path_env) {
+        let candidate = dir.join(name);
+        if is_executable_file(&candidate) {
+            return candidate;
+        }
+    }
+    PathBuf::from(name)
+}
+
+/// Resolves `fusermount` or `fusermount3`, preferring `fusermount`.
+pub fn resolve_fusermount_binary() -> PathBuf {
+    let path_env = augmented_path_env();
+    let primary = resolve_binary_in_path("fusermount", &path_env);
+    if primary.is_absolute() {
+        return primary;
+    }
+    let fallback = resolve_binary_in_path("fusermount3", &path_env);
+    if fallback.is_absolute() {
+        return fallback;
+    }
+    PathBuf::from("fusermount")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +223,29 @@ mod tests {
         assert_eq!(first.len(), 32);
         assert!(first.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn augmented_path_and_resolve_binary_locate_executables() {
+        let path_env = augmented_path_env();
+        let paths: Vec<PathBuf> = env::split_paths(&path_env).collect();
+        assert!(paths.contains(&PathBuf::from("/usr/bin")));
+
+        let temp = tempdir().expect("tempdir");
+        let fake_bin = temp.path().join("custom-rclone-bin");
+        fs::write(&fake_bin, "#!/bin/sh\n").expect("write binary");
+        let mut perms = fs::metadata(&fake_bin).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&fake_bin, perms).expect("chmod");
+
+        let custom_path = env::join_paths([temp.path()]).expect("join paths");
+        assert_eq!(
+            resolve_binary_in_path("custom-rclone-bin", &custom_path),
+            fake_bin
+        );
+        assert_eq!(
+            resolve_binary_in_path("missing-bin", &custom_path),
+            PathBuf::from("missing-bin")
+        );
     }
 }

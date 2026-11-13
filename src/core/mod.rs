@@ -1,4 +1,11 @@
+pub mod autostart_manager;
 pub mod config;
+pub mod mount_manager;
+pub mod notifications;
+pub mod process_manager;
+pub mod rclone_client;
 pub mod secret_manager;
 pub mod settings_manager;
 pub mod single_instance;
+pub mod sync_manager;
+pub mod sync_worker;
