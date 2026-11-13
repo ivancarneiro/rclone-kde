@@ -7,13 +7,13 @@
 
 **Goal**: Establecer la base XDG, generación/gestión segura de secretos en Keyring, persistencia/migración de `settings.json` sin KeePassXC, logging rotativo e IPC de instancia única.
 
-- [ ] T1.1 Configurar dependencias base de Fase 1 en `Cargo.toml` (`tokio`, `serde`, `serde_json`, `thiserror`, `anyhow`, `tracing`, `tracing-subscriber`, `tracing-appender`, `dirs`, `keyring`) y verificar `cargo audit`.
-- [ ] T1.2 [P] Implementar `src/core/config.rs` (`AppPaths` XDG puro, constantes `KEYRING_SERVICE = "RcloneKDE"`, `ensure_dirs()`, generador hexadecimal de 16 bytes) con tests unitarios.
-- [ ] T1.3 [P] Implementar `src/core/secret_manager.rs` (trait `SecretStore`, `KeyringSecretStore`, `InMemorySecretStore`, `GoogleCredentials`, `get_or_create_rc_pass`) con tests unitarios.
-- [ ] T1.4 Implementar `src/core/settings_manager.rs` (`AppSettings` sin KeePassXC, carga/guardado XDG y migración automática desde `./settings.json` legado) con tests unitarios.
-- [ ] T1.5 Implementar `src/core/single_instance.rs` (socket Unix abstracto `\0rclone_manager_gna_lock` con comando `"SHOW\n"` y receptor `mpsc`) con test de integración IPC.
-- [ ] T1.6 Configurar `src/lib.rs`, `src/core/mod.rs` y bootstrap en `src/main.rs` (`tracing-subscriber` + rotación diaria en `~/.cache/rclone-manager/logs`, single-instance, `AppPaths`, `SettingsManager`, `SecretManager`).
-- [ ] T1.7 Verificar Fase 1 con `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` y commit atómico.
+- [x] T1.1 Configurar dependencias base de Fase 1 en `Cargo.toml` (`tokio`, `serde`, `serde_json`, `thiserror`, `anyhow`, `tracing`, `tracing-subscriber`, `tracing-appender`, `dirs`, `keyring`) y verificar `cargo audit`.
+- [x] T1.2 [P] Implementar `src/core/config.rs` (`AppPaths` XDG puro, constantes `KEYRING_SERVICE = "RcloneKDE"`, `ensure_dirs()`, generador hexadecimal de 16 bytes) con tests unitarios.
+- [x] T1.3 [P] Implementar `src/core/secret_manager.rs` (trait `SecretStore`, `KeyringSecretStore`, `InMemorySecretStore`, `GoogleCredentials`, `get_or_create_rc_pass`) con tests unitarios.
+- [x] T1.4 Implementar `src/core/settings_manager.rs` (`AppSettings` sin KeePassXC, carga/guardado XDG y migración automática desde `./settings.json` legado) con tests unitarios.
+- [x] T1.5 Implementar `src/core/single_instance.rs` (socket Unix abstracto `\0rclone_manager_gna_lock` con comando `"SHOW\n"` y receptor `mpsc`) con test de integración IPC.
+- [x] T1.6 Configurar `src/lib.rs`, `src/core/mod.rs` y bootstrap en `src/main.rs` (`tracing-subscriber` + rotación diaria en `~/.cache/rclone-manager/logs`, single-instance, `AppPaths`, `SettingsManager`, `SecretManager`).
+- [x] T1.7 Verificar Fase 1 con `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` y commit atómico.
 
 **Checkpoint**: Core Foundation compilando sin warnings y con cobertura de tests unitarios.
 
@@ -44,3 +44,4 @@
 - [ ] T3.4 Implementar `src/ui/tray.rs` con `ksni` (`StatusNotifierItem` D-Bus: Show Manager, Hide, Exit) y bucle de eventos Tokio ↔ Slint (`invoke_from_event_loop`).
 - [ ] T3.5 Conectar `SingleInstance` (`InstanceCommand::Show`), señales `SIGINT`/`SIGTERM` para `cleanup_all()` al cerrar, y autostart silencioso de `auto_mounts` al iniciar.
 - [ ] T3.6 Verificar Fase 3 (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo build --release`), probar ejecución en KDE Plasma/Wayland y actualizar `README.md` / `CHANGELOG.md`.
+
