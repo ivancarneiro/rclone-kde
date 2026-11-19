@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1"
 chrono = "0.4"
 dirs = "6"
-fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
+fontique = { version = "0.13", features = ["fontconfig-dlopen"] }
 keyring = { version = "3", features = ["async-secret-service", "tokio", "crypto-rust"] }
 ksni = "0.3"
 notify-rust = { version = "4", default-features = false, features = ["z"] }
