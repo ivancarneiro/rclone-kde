@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Asegurar que las rutas de binarios de usuario estén disponibles (especialmente para entornos de systemd/KDE)
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 # Detectar el directorio del script para hacerlo portable
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
