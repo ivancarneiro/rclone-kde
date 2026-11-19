@@ -1,0 +1,35 @@
+#!/bin/bash
+# Hook de commit-msg: Validación estricta de Conventional Commits
+set -e
+
+COMMIT_MSG_FILE="$1"
+FIRST_LINE=$(head -n 1 "$COMMIT_MSG_FILE")
+
+# Permitir commits automáticos de merge, fixup o squash
+if echo "$FIRST_LINE" | grep -Eq '^(Merge |fixup! |squash! )'; then
+    exit 0
+fi
+
+# Regex oficial de Conventional Commits
+# Formato: <type>(<scope>): <subject> o <type>: <subject>
+CONVENTIONAL_REGEX="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_\-\.\/]+\))?(!)?: .{1,100}$"
+
+if ! echo "$FIRST_LINE" | grep -Eq "$CONVENTIONAL_REGEX"; then
+    echo "======================================================================"
+    echo "❌ ERROR: El mensaje del commit no cumple con Conventional Commits."
+    echo "----------------------------------------------------------------------"
+    echo "Mensaje ingresado: \"$FIRST_LINE\""
+    echo ""
+    echo "Formato requerido: <tipo>(<ámbito opcional>): <descripción>"
+    echo "Tipos válidos: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+    echo ""
+    echo "Ejemplos válidos:"
+    echo "  feat(auth): add oauth2 token refresh support"
+    echo "  fix(mount): resolve zombie fuse mount on exit"
+    echo "  docs(readme): update installation instructions"
+    echo "  chore: update cargo dependencies"
+    echo "======================================================================"
+    exit 1
+fi
+
+exit 0

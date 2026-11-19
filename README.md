@@ -1,4 +1,4 @@
-# Rclone Manager (KDE/Qt Version)
+# Rclone Manager (Rust + Slint KDE Edition)
 
 [![Recorrido Completo (Walkthrough)](https://img.shields.io/badge/📖-Ver_Recorrido/Manual_de_Uso-blue)](WALKTHROUGH.md)
 
@@ -26,7 +26,7 @@ La app **nunca almacena credenciales en texto plano**. Todo pasa por el keyring 
 | ¿Qué se guarda? | Dónde | Por qué es seguro |
 |---|---|---|
 | **Google OAuth: Client ID + Secret** | Keyring (`RcloneKDE`) | Cifrado por el sistema operativo, solo tu usuario puede acceder |
-| **Contraseña RC API** | Keyring (`RcloneKDE`) | Token aleatorio de 16 bytes (`secrets.token_hex(16)`) para autenticar la comunicación interna entre la GUI y el motor Rclone |
+| **Contraseña RC API** | Keyring (`RcloneKDE`) | Token aleatorio de 16 bytes (32 caracteres hexadecimales) para autenticar la comunicación interna entre la GUI y el motor Rclone |
 | **Token de acceso a Drive** | `~/.config/rclone/rclone.conf` | Archivo con permisos restringidos a tu usuario, compatible con `rclone` CLI |
 
 **Flujo de seguridad al crear una conexión:**
@@ -75,7 +75,7 @@ Si tus claves OAuth expiran o regenerás tus credenciales en Google Cloud Consol
 |---|---|
 | **Límite de borrados** | `--max-delete 5` evita la pérdida masiva de archivos por error de configuración |
 | **Dry-run (Simular)** | Botón "👁️" para previsualizar qué cambios haría el sync sin ejecutarlos |
-| **Worker thread** | La sincronización corre en un `QThread` separado — la UI nunca se congela |
+| **Worker asíncrono** | La sincronización corre en tareas Tokio supervisadas — la UI nunca se congela |
 
 ---
 
@@ -125,27 +125,27 @@ Botón **"🔄"** en cada remote del Dashboard (y en Settings):
 | **Help contextual** | Popup "Cómo usar" con instrucciones claras |
 | **Selector de carpeta local** | Botón "..." para elegir con diálogo nativo |
 
-### 6. Unificación de Directorios
+### 6. Rutas XDG Estándar
 
-Todo el proyecto vive dentro de un único directorio:
+La aplicación sigue el estándar **XDG Base Directory** (y migra de forma transparente `settings.json` / `sync_tasks.json` previos):
 
 ```
-rclone-kde/
-├── mounts/        # Puntos de montaje (ivanexequielc/, etc.)
-├── data/          # Caché VFS y datos de la app
-│   └── cache/
-├── src/           # Código fuente (Python + QML)
-└── sync_tasks.json
+~/.config/rclone-manager/
+├── settings.json      # Preferencias y auto-montajes
+└── sync_tasks.json    # Tareas de sincronización
+~/.cache/rclone-manager/
+├── vfs/               # Caché VFS de rclone
+└── logs/              # Logs rotativos diarios
+~/RcloneMounts/        # Puntos de montaje por defecto (configurable en Settings)
 ```
-
-**Portabilidad**: Clonás el repo en otro dispositivo, ejecutás `setup.sh`, y todo funciona — las rutas son relativas al proyecto.
 
 ### 7. Integración con el Sistema
 
-- **System Tray**: Minimiza al cerrar, arranque silencioso
+- **System Tray**: Bandeja `StatusNotifierItem` nativa vía D-Bus (`ksni`), minimiza al cerrar, arranque silencioso (`--minimized`)
+- **Instancia Única**: Despierta la ventana activa si se intenta abrir una segunda instancia
 - **Auto-start**: Acceso directo en `~/.config/autostart/` (gestión desde Settings)
-- **Notificaciones del sistema**: Alertas de montaje, errores y conflictos vía `notify-send`
-- **Apertura en gestor de archivos**: Botón "Open" → Dolphin/Nautilus en el punto de montaje
+- **Notificaciones del sistema**: Alertas de montaje, errores y conflictos vía D-Bus (`notify-rust`)
+- **Apertura en gestor de archivos**: Botón "Open" → Dolphin/gestor predeterminado en el punto de montaje
 
 ---
 
@@ -153,24 +153,22 @@ rclone-kde/
 
 | Requisito | Detalle |
 |---|---|
-| **Sistema** | Linux (KDE Neon, Ubuntu, Fedora, etc.) |
-| **Dependencia externa** | `rclone` instalado (`sudo apt install rclone` o script oficial) |
-| **Python** | 3.9+ |
-| **Gráficos** | Qt6 (vía PyQt6) |
+| **Sistema** | Linux (KDE Plasma Wayland/X11, GNOME, etc.) |
+| **Dependencia externa** | `rclone` y `fusermount` / `fusermount3` instalados |
+| **Compilación** | Toolchain de Rust (`cargo`, `rustc`) |
 | **Keyring** | KDE Wallet, GNOME Keyring o cualquier backend `secret-service` |
 
 ---
 
-## 🛠️ Instalación
+## 🛠️ Compilación e Instalación
 
 ```bash
 git clone <repo-url> rclone-kde
 cd rclone-kde
-chmod +x setup.sh
-./setup.sh
+cargo build --release
 ```
 
-Esto crea el entorno virtual, instala dependencias y agrega un acceso directo al menú de aplicaciones.
+El binario único queda generado en `target/release/rclone-manager`.
 
 ---
 
@@ -190,36 +188,30 @@ Crea una **copia física idéntica** en tu disco local. Mantiene ambos lados sin
 
 ---
 
-## 🏗️ Arquitectura (MVVM)
+## 🏗️ Arquitectura (Rust + Slint)
 
 ```
-src/
-├── main.py                # Punto de entrada + contexto QML
-├── core/
-│   ├── config.py          # Configuración + keyring RC pass
-│   ├── rclone_client.py   # Cliente HTTP API de Rclone
-│   ├── mount_manager.py   # Montaje/desmontaje + anti-zombie
-│   ├── sync_manager.py    # Persistencia de tareas sync
-│   ├── sync_worker.py     # QThread para sync sin congelar UI
-│   ├── secret_manager.py  # CRUD de credenciales en Keyring
-│   ├── notifications.py   # Notificaciones del sistema
-│   ├── settings_manager.py
-│   └── autostart_manager.py
-└── ui/
-    ├── viewmodels/        # Lógica de cada pantalla
-    │   ├── main_vm.py     # Dashboard + reconnect
-    │   ├── settings_vm.py # Settings + auto-push credentials
-    │   ├── wizard_vm.py   # Asistente + keyring integration
-    │   ├── sync_vm.py     # Sync tasks
-    │   └── activity_vm.py # Monitor de actividad
-    └── qml/               # Interfaz Qt Quick
-        ├── Main.qml       # Ventana principal + Dashboard
-        ├── SettingsView.qml
-        ├── SyncView.qml
-        ├── ActivityView.qml
-        ├── MountOptionsDialog.qml
-        └── Dialogs/
-            └── NewDriveWizard.qml
+├── ui/
+│   └── main.slint              # Interfaz declarativa Slint (5 vistas + modales)
+└── src/
+    ├── main.rs                 # Runtime Tokio, single-instance, tray y ciclo Slint
+    ├── lib.rs
+    ├── core/
+    │   ├── config.rs           # Rutas XDG y resolución de binarios
+    │   ├── rclone_client.rs    # Cliente HTTP RC API de Rclone + authorize
+    │   ├── process_manager.rs  # Supervisión del daemon rclone rcd
+    │   ├── mount_manager.rs    # Montaje/desmontaje + limpieza anti-zombie
+    │   ├── sync_manager.rs     # Persistencia CRUD de tareas sync
+    │   ├── sync_worker.rs      # Subproceso supervisado sync/bisync/copy + logs
+    │   ├── secret_manager.rs   # CRUD de credenciales en Keyring (Secret Service)
+    │   ├── settings_manager.rs # Preferencias y migración legacy
+    │   ├── single_instance.rs  # Socket abstracto Unix + señal SHOW
+    │   ├── autostart_manager.rs
+    │   └── notifications.rs    # Notificaciones D-Bus
+    └── ui/
+        ├── mod.rs
+        ├── controller.rs       # Puente asíncrono entre Slint y Tokio/Core
+        └── tray.rs             # System Tray nativo vía ksni
 ```
 
 ---
@@ -227,15 +219,12 @@ src/
 ## 🚀 Cómo Usar
 
 ```bash
-# Desde el acceso directo del menú:
-# "Rclone Manager"
+# Ejecutar en primer plano:
+./target/release/rclone-manager
 
-# O vía terminal:
-cd rclone-kde
-./start.sh
+# O iniciar minimizado en la bandeja del sistema:
+./target/release/rclone-manager --minimized
 ```
-
-Ver [**Manual de Usuario (WALKTHROUGH.md)**](WALKTHROUGH.md) para una guía completa paso a paso.
 
 ---
 

@@ -23,3 +23,16 @@ mounts/
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Added by cargo
+
+/target
+
+# Local AI Code Graph & Memory
+.codegraph/
+.mempalace/
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

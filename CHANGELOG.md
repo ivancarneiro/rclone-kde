@@ -4,6 +4,18 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-13
+### Added
+- **Migración completa a Rust puro + Slint (`rclone-manager`)**: Aplicación nativa compilada en un único binario sin dependencias de Python ni Qt6.
+- **Motor Rclone Async Híbrido**: Comunicación HTTP con `rclone rcd` vía `reqwest` (`list_remotes`, `list_mounts`, `about`, `core/stats`, `config/*`) combinada con subprocesos supervisados por Tokio (`mount`, `sync`/`bisync`/`copy` con streaming de logs en vivo y `authorize`).
+- **Interfaz gráfica en Slint (`ui/main.slint`)**: Paridad visual de las 5 vistas principales (Dashboard con barras de cuota y diálogos de montaje/borrado, Asistente de nuevo Drive con precarga desde Keyring, Sync Tasks con visor de logs estilo Matrix y Dry-Run, Activity Monitor y Settings).
+- **Integración nativa con KDE Plasma / Wayland**: Bandeja del sistema `StatusNotifierItem` mediante `ksni` (D-Bus puro), notificaciones D-Bus mediante `notify-rust`, autostart XDG, selector de directorios nativo (`kdialog`/`zenity`), instancia única por socket Unix abstracto (`SHOW`) y limpieza automática de montajes ante `SIGINT`/`SIGTERM`.
+- **Rutas XDG Base Directory**: Configuración en `~/.config/rclone-manager/`, cachés VFS y logs rotativos en `~/.cache/rclone-manager/`, y montajes por defecto en `~/RcloneMounts` (configurable), con migración transparente de `settings.json` y `sync_tasks.json`.
+
+### Removed
+- Eliminada por completo la integración legacy con KeePassXC (simplificando la gestión de credenciales exclusivamente al Keyring del sistema vía Secret Service).
+- Eliminado el stack anterior en Python/PyQt6/QML.
+
 ## [1.3.2] - 2026-08-14
 ### Fixed
 - **Inicio automático (Autostart)**: Restaurado el archivo `.desktop` en `~/.config/autostart/rclone-gui-manager.desktop` apuntando a `start.sh --minimized`.

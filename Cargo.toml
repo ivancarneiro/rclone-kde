@@ -1,0 +1,29 @@
+[package]
+name = "rclone-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+dirs = "6"
+fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
+keyring = { version = "3", features = ["async-secret-service", "tokio", "crypto-rust"] }
+ksni = "0.3"
+notify-rust = { version = "4", default-features = false, features = ["z"] }
+png = "0.18"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process", "signal"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[build-dependencies]
+slint-build = "1.18"
+
+[dev-dependencies]
+tempfile = "3"
