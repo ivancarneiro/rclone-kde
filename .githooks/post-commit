@@ -1,0 +1,6 @@
+#!/bin/sh
+# Sincronización incremental silenciosa de CodeGraph
+export PATH="/home/ciex/.nvm/versions/node/v24.14.0/bin:$HOME/.local/bin:$PATH"
+if [ -d ".codegraph" ]; then
+    npx -y @colbymchenry/codegraph sync --quiet >/dev/null 2>&1 &
+fi

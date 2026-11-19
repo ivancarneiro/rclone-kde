@@ -1,0 +1,116 @@
+#!/bin/bash
+# Hook de pre-commit: Verificación de Secretos, Sintaxis y Vulnerabilidades (CVEs)
+set -eo pipefail
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+echo "🔍 [pre-commit] Iniciando auditoría de seguridad y calidad..."
+
+# ------------------------------------------------------------------------------
+# 0. POLÍTICA DE RUST PURO (Cero Python en ramas Rust)
+# ------------------------------------------------------------------------------
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [[ "$CURRENT_BRANCH" =~ rust ]]; then
+    STAGED_PYTHON_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$|uv\.lock|requirements\.txt|pyproject\.toml|\.venv' || true)
+    if [ -n "$STAGED_PYTHON_FILES" ]; then
+        echo "======================================================================"
+        echo "❌ ERROR: Política de Rust Puro y Duro violada."
+        echo "En la rama '$CURRENT_BRANCH' está estrictamente prohibido agregar"
+        echo "o commitear archivos de la versión anterior en Python."
+        echo "----------------------------------------------------------------------"
+        echo "Archivos rechazados en stage:"
+        echo "$STAGED_PYTHON_FILES"
+        echo "======================================================================"
+        exit 1
+    fi
+fi
+
+# ------------------------------------------------------------------------------
+# 1. VERIFICACIÓN DE SECRETOS (gitleaks)
+# ------------------------------------------------------------------------------
+echo "🔐 [1/3] Verificando secretos y credenciales expuestas..."
+if command -v gitleaks &> /dev/null; then
+    if ! gitleaks protect --staged -v --redact; then
+        echo ""
+        echo "❌ ERROR: Gitleaks detectó posibles secretos/tokens en el stage."
+        echo "Por favor, elimina o enmascara los secretos antes de realizar el commit."
+        exit 1
+    fi
+    echo "   ✅ Sin secretos detectados."
+else
+    echo "   ⚠️ AVISO: 'gitleaks' no encontrado en el PATH. Omitiendo escaneo de secretos."
+fi
+
+# ------------------------------------------------------------------------------
+# 2. VERIFICACIÓN DE SINTAXIS Y FORMATO
+# ------------------------------------------------------------------------------
+echo "📝 [2/3] Verificando sintaxis de archivos en stage..."
+
+# 2.1 Scripts Shell (.sh)
+STAGED_SH_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.sh$' || true)
+if [ -n "$STAGED_SH_FILES" ]; then
+    echo "   Verificando sintaxis en scripts shell (.sh)..."
+    for file in $STAGED_SH_FILES; do
+        if [ -f "$file" ]; then
+            if ! bash -n "$file"; then
+                echo "❌ ERROR: Error de sintaxis shell en: $file"
+                exit 1
+            fi
+        fi
+    done
+    echo "   ✅ Scripts Shell válidos."
+fi
+
+# 2.2 Archivos Rust (.rs)
+STAGED_RS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' || true)
+if [ -n "$STAGED_RS_FILES" ] && [ -f "Cargo.toml" ]; then
+    echo "   Verificando formato y sintaxis Rust..."
+    if command -v cargo &> /dev/null; then
+        if ! cargo fmt --check; then
+            echo "❌ ERROR: El código Rust no cumple con el formato estándar. Ejecuta 'cargo fmt'."
+            exit 1
+        fi
+        if ! cargo check --quiet; then
+            echo "❌ ERROR: Falló 'cargo check' en el proyecto Rust."
+            exit 1
+        fi
+        echo "   ✅ Sintaxis y formato de Rust válidos."
+    fi
+fi
+
+# 2.3 Archivos Python (.py)
+STAGED_PY_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+if [ -n "$STAGED_PY_FILES" ]; then
+    echo "   Verificando sintaxis Python..."
+    for file in $STAGED_PY_FILES; do
+        if [ -f "$file" ]; then
+            if ! python3 -m py_compile "$file"; then
+                echo "❌ ERROR: Error de sintaxis Python en: $file"
+                exit 1
+            fi
+        fi
+    done
+    echo "   ✅ Sintaxis Python válida."
+fi
+
+# ------------------------------------------------------------------------------
+# 3. VERIFICACIÓN DE VULNERABILIDADES Y CVES
+# ------------------------------------------------------------------------------
+echo "🛡️  [3/3] Verificando vulnerabilidades y CVEs en dependencias..."
+
+# 3.1 Auditoría de Rust (cargo-audit)
+if [ -f "Cargo.lock" ]; then
+    echo "   Ejecutando 'cargo audit'..."
+    if command -v cargo-audit &> /dev/null || cargo audit --version &> /dev/null; then
+        if ! env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_PREFIX cargo audit; then
+            echo "❌ ERROR: 'cargo audit' detectó vulnerabilidades (CVEs) en dependencias de Rust."
+            exit 1
+        fi
+        echo "   ✅ Auditoría de Rust sin vulnerabilidades críticas."
+    else
+        echo "   ⚠️ AVISO: 'cargo-audit' no está instalado. Omitiendo escaneo de CVEs en Cargo."
+    fi
+fi
+
+echo "✨ [pre-commit] Todas las comprobaciones fueron superadas con éxito."
+exit 0
